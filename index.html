@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Test Input</title>
+</head>
+<body>
+  <h1>Cloudflare Test Page</h1>
+  <form id="testForm">
+    <input type="text" id="userInput" placeholder="Enter something..." />
+    <button type="submit">Submit</button>
+  </form>
+  <p id="status"></p>
+
+  <script>
+    document.getElementById("testForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const input = document.getElementById("userInput").value;
+      const response = await fetch("/api/save", {
+        method: "POST",
+        body: JSON.stringify({ data: input }),
+      });
+      document.getElementById("status").innerText = await response.text();
+    });
+  </script>
+</body>
+</html>
