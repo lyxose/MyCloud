@@ -139,22 +139,26 @@
                 右眼近视度数
                 <input name="right_myopia" />
               </label>
-              <label>
-                是否有金属植入物
-                <select name="metal_implant">
-                  <option value="">请选择</option>
-                  <option value="无">无</option>
-                  <option value="有">有</option>
-                </select>
-              </label>
-              <label>
-                是否幽闭恐惧
-                <select name="claustrophobia">
-                  <option value="">请选择</option>
-                  <option value="无">无</option>
-                  <option value="有">有</option>
-                </select>
-              </label>
+              <div class="side-fields">
+                <label>
+                  是否有金属植入物
+                  <select name="metal_implant">
+                    <option value="">请选择</option>
+                    <option value="无">无</option>
+                    <option value="有">有</option>
+                  </select>
+                  <span class="field-desc">包括心脏起搏器、人工关节、钢板、螺钉、植入芯片等。</span>
+                </label>
+                <label>
+                  是否幽闭恐惧
+                  <select name="claustrophobia">
+                    <option value="">请选择</option>
+                    <option value="无">无</option>
+                    <option value="有">有</option>
+                  </select>
+                  <span class="field-desc">如密闭空间恐惧、MRI 检查时不适、强烈焦虑等。</span>
+                </label>
+              </div>
               <label>
                 民族
                 <input name="ethnicity" />
@@ -181,14 +185,9 @@
 
             <form id="experimentForm" class="form-grid">
               <h4>实验报名</h4>
-              <label>
-                实验类型
-                <input name="experiment_type" required />
-              </label>
-              <label>
-                实验编号
-                <input name="experiment_id" required />
-              </label>
+              <div id="experimentList">
+                <!-- 实验列表由 app.js 动态生成 -->
+              </div>
               <button type="submit" class="primary">提交报名</button>
               <p class="form-note" id="experimentStatus"></p>
             </form>
