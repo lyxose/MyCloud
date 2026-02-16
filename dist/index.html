@@ -13,16 +13,12 @@
         <p class="eyebrow">中国科学院心理研究所 IPCAS</p>
         <h1>视觉与注意课题组 在线被试库</h1>
         <p class="subtitle">
-          注册、登录、完善信息并进行实验报名。所有信息遵循合规要求加密存储，管理员仅在必要时解密使用。
+          注册、登录、完善信息并进行实验报名。您的个人信息将用于科研参与管理与安全合规目的。
         </p>
       </div>
-      <div class="quick-panel">
-        <p class="panel-title">快速入口</p>
-        <div class="pill-row">
-          <button class="pill" data-target="auth">注册/登录</button>
-          <button class="pill" data-target="profile">个人主页</button>
-          <button class="pill" data-target="admin">管理员</button>
-        </div>
+      <div class="logo-row">
+        <div class="logo-slot">心理研究所 LOGO</div>
+        <div class="logo-slot">课题组 LOGO</div>
       </div>
     </header>
 
@@ -98,7 +94,7 @@
         </div>
       </section>
 
-      <section class="card" id="profile">
+      <section class="card hidden" id="profile">
         <div class="card-header">
           <h2>个人主页</h2>
           <p>登录后可更新信息并报名实验。</p>
@@ -202,46 +198,18 @@
         </div>
       </section>
 
-      <section class="card" id="admin">
-        <div class="card-header">
-          <h2>管理员工作台</h2>
-          <p>仅管理员可查看与更新敏感信息。</p>
-        </div>
-        <div id="adminEmpty" class="empty-state">
-          <p>管理员登录后可使用此区域。</p>
-        </div>
-        <div id="adminArea" class="hidden">
-          <div class="split">
-            <div class="admin-panel">
-              <h4>用户列表</h4>
-              <button id="loadUsers" class="ghost">加载最新 50 名</button>
-              <div id="userList" class="scroll"></div>
-            </div>
-            <div class="admin-panel">
-              <h4>查询/更新用户</h4>
-              <label>
-                用户 ID
-                <input id="adminUserUid" placeholder="U000001" />
-              </label>
-              <button id="adminLoadUser" class="ghost">加载用户详情</button>
-              <pre id="adminUserDetail" class="code"></pre>
-              <label>
-                更新 JSON
-                <textarea id="adminUpdateJson" rows="6" placeholder='{"region":"北京","role":"admin"}'></textarea>
-              </label>
-              <button id="adminUpdateUser" class="primary">提交更新</button>
-              <button id="adminPromote" class="ghost">设为管理员</button>
-              <p class="form-note" id="adminStatus"></p>
-            </div>
-          </div>
-        </div>
-      </section>
-
       <section class="card consent" id="consent">
         <h2>信息收集与使用告知</h2>
         <p>
-          本系统仅用于科研目的，被试信息将加密存储，管理员仅在必要时解密使用。您可随时申请更新或删除个人数据。
-          若不同意本告知，请勿提交注册信息。
+          我们将收集您在注册与实验报名过程中提交的身份信息、联系方式及相关背景资料，用于科研被试管理、资格核验、
+          参与记录、报酬结算与安全合规目的。我们仅在实现上述目的的最小范围内处理您的信息，并采取加密、权限控制等措施保护。
+        </p>
+        <p>
+          您有权查询、更正或补充您的个人信息，也可以申请删除或限制处理。若您撤回同意，可能影响后续实验参与及报酬结算。
+          我们不会向无关第三方披露您的敏感信息，依法需要提供或经您授权的情形除外。
+        </p>
+        <p>
+          您提交信息即表示已阅读并理解本告知内容，并同意我们按照告知范围处理您的个人信息。若不同意，请勿继续提交注册。
         </p>
       </section>
     </main>

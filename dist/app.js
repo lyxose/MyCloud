@@ -29,19 +29,7 @@ const profileName = document.getElementById("profileName");
 const profileUid = document.getElementById("profileUid");
 const profileMeta = document.getElementById("profileMeta");
 
-const adminEmpty = document.getElementById("adminEmpty");
-const adminArea = document.getElementById("adminArea");
-const loadUsersBtn = document.getElementById("loadUsers");
-const userList = document.getElementById("userList");
-const adminUserUid = document.getElementById("adminUserUid");
-const adminLoadUser = document.getElementById("adminLoadUser");
-const adminUserDetail = document.getElementById("adminUserDetail");
-const adminUpdateJson = document.getElementById("adminUpdateJson");
-const adminUpdateUser = document.getElementById("adminUpdateUser");
-const adminPromote = document.getElementById("adminPromote");
-const adminStatus = document.getElementById("adminStatus");
-
-const pills = document.querySelectorAll(".pill");
+const profileCard = document.getElementById("profile");
 
 function setStatus(el, text, isError = false) {
   el.textContent = text;
@@ -84,26 +72,18 @@ function toggleTab(tabName) {
 
 function renderProfile() {
   if (!state.profile) {
+    profileCard.classList.add("hidden");
     profileEmpty.classList.remove("hidden");
     profileArea.classList.add("hidden");
-    adminEmpty.classList.remove("hidden");
-    adminArea.classList.add("hidden");
     return;
   }
 
+  profileCard.classList.remove("hidden");
   profileEmpty.classList.add("hidden");
   profileArea.classList.remove("hidden");
   profileName.textContent = state.profile.name || "";
   profileUid.textContent = `唯一 ID: ${state.profile.user_uid}`;
   profileMeta.textContent = `年龄: ${state.profile.age ?? "-"} | 单位: ${state.profile.unit ?? "-"}`;
-
-  if (state.role === "admin" || state.role === "root") {
-    adminEmpty.classList.add("hidden");
-    adminArea.classList.remove("hidden");
-  } else {
-    adminEmpty.classList.remove("hidden");
-    adminArea.classList.add("hidden");
-  }
 }
 
 async function loadProfile() {
@@ -124,13 +104,6 @@ async function loadProfile() {
 
 tabs.forEach((tab) => {
   tab.addEventListener("click", () => toggleTab(tab.dataset.tab));
-});
-
-pills.forEach((pill) => {
-  pill.addEventListener("click", () => {
-    const target = document.getElementById(pill.dataset.target);
-    if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
-  });
 });
 
 registerForm.addEventListener("submit", async (event) => {
@@ -159,6 +132,7 @@ loginForm.addEventListener("submit", async (event) => {
     localStorage.setItem("subjinfo_token", data.token);
     setStatus(loginStatus, "登录成功");
     await loadProfile();
+    profileCard.scrollIntoView({ behavior: "smooth", block: "start" });
     loginForm.reset();
   } catch (error) {
     setStatus(loginStatus, error.message, true);
@@ -202,57 +176,6 @@ logoutBtn.addEventListener("click", async () => {
   state.profile = null;
   state.role = null;
   renderProfile();
-});
-
-loadUsersBtn.addEventListener("click", async () => {
-  userList.textContent = "加载中...";
-  try {
-    const data = await apiRequest("/admin/users", { method: "GET" });
-    userList.innerHTML = data.users
-      .map((user) => `<div class="user-item">${user.user_uid} · ${user.name} · ${user.unit || "-"}</div>`)
-      .join("");
-  } catch (error) {
-    userList.textContent = error.message;
-  }
-});
-
-adminLoadUser.addEventListener("click", async () => {
-  adminUserDetail.textContent = "加载中...";
-  try {
-    const data = await apiRequest(`/admin/user?user_uid=${encodeURIComponent(adminUserUid.value)}`, {
-      method: "GET",
-    });
-    adminUserDetail.textContent = JSON.stringify(data.profile, null, 2);
-  } catch (error) {
-    adminUserDetail.textContent = error.message;
-  }
-});
-
-adminUpdateUser.addEventListener("click", async () => {
-  setStatus(adminStatus, "提交中...");
-  try {
-    const updates = JSON.parse(adminUpdateJson.value || "{}");
-    await apiRequest("/admin/update-user", {
-      method: "POST",
-      json: { user_uid: adminUserUid.value, updates },
-    });
-    setStatus(adminStatus, "更新完成");
-  } catch (error) {
-    setStatus(adminStatus, error.message, true);
-  }
-});
-
-adminPromote.addEventListener("click", async () => {
-  setStatus(adminStatus, "提交中...");
-  try {
-    await apiRequest("/admin/create-admin", {
-      method: "POST",
-      json: { user_uid: adminUserUid.value },
-    });
-    setStatus(adminStatus, "已设置为管理员");
-  } catch (error) {
-    setStatus(adminStatus, error.message, true);
-  }
 });
 
 loadProfile();
