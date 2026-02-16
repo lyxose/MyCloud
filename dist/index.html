@@ -8,7 +8,7 @@
   </head>
   <body>
     <!-- <div class="bg-orbit"></div> -->
-    <header class="site-header">
+            <form id="profileForm" class="form-grid">
       <div>
         <p class="eyebrow">中国科学院心理研究所 IPCAS</p>
         <h1>视觉与注意课题组 在线被试库</h1>
@@ -36,58 +36,57 @@
         <div class="tab-panel active" id="tab-register">
           <form id="registerForm" class="form-grid">
             <label>
-              姓名
-              <input name="name" required />
-            </label>
-            <label>
-              密码
-              <input name="password" type="password" minlength="6" required />
-            </label>
-            <label>
-              性别
-              <select name="gender" required>
-                <option value="">请选择</option>
-                <option value="男">男</option>
-                <option value="女">女</option>
-                <option value="其他">其他</option>
-              </select>
-            </label>
-            <label>
-              所在单位
-              <input name="unit" required />
-            </label>
-            <label>
-              身份证号
-              <input name="idcard" required />
-            </label>
-            <label>
-              收款支付宝绑定手机号
-              <input name="alipay_phone" required />
-            </label>
-            <label class="consent-check">
-              <input type="checkbox" name="consent" required />
-              <span>我已阅读并同意《信息收集与使用告知》</span>
-            </label>
-            <button type="submit" class="primary">提交注册</button>
-          </form>
-          <p class="form-note" id="registerStatus"></p>
-        </div>
+                民族
+                <input name="ethnicity" />
+              </label>
+              <label>
+                受教育年限
+                <input name="education_years" />
+              </label>
+              <label>
+                身高 (cm)
+                <input name="height_cm" />
+              </label>
+              <label>
+                体重 (kg)
+                <input name="weight_kg" />
+              </label>
+              <label>
+                头围 (cm)
+                <input name="head_circumference_cm" />
+              </label>
+              <div class="inline-two">
+                <label>
+                  是否有金属植入物
+                  <span class="hint">如金属内固定、起搏器、植入式助听器等</span>
+                  <select name="metal_implant">
+                    <option value="">请选择</option>
+                    <option value="无">无</option>
+                    <option value="有">有</option>
+                  </select>
+                </label>
+                <label>
+                  是否幽闭恐惧
+                  <span class="hint">如密闭空间焦虑、呼吸急促、明显不适等</span>
+                  <select name="claustrophobia">
+                    <option value="">请选择</option>
+                    <option value="无">无</option>
+                    <option value="有">有</option>
+                  </select>
+                </label>
+              </div>
+              <button type="submit" class="primary">保存更新</button>
+              <p class="form-note" id="profileStatus"></p>
+            </form>
 
-        <div class="tab-panel" id="tab-login">
-          <form id="loginForm" class="form-grid">
-            <label>
-              唯一 ID (U000001)
-              <input name="user_uid" />
-            </label>
-            <label>
-              或身份证号
-              <input name="idcard" />
-            </label>
-            <label>
-              密码
-              <input name="password" type="password" required />
-            </label>
-            <button type="submit" class="primary">登录</button>
+            <form id="experimentForm" class="form-grid experiment-form">
+              <h4>实验报名</h4>
+              <div class="experiment-list">
+                <p class="hint">暂无开放实验。后续将在此处显示可报名的实验列表。</p>
+              </div>
+              <button type="submit" class="primary">提交报名</button>
+              <p class="form-note" id="experimentStatus"></p>
+            </form>
           </form>
           <p class="form-note" id="loginStatus"></p>
         </div>
