@@ -16,7 +16,6 @@ const registerForm = document.getElementById("registerForm");
 const loginForm = document.getElementById("loginForm");
 const profileForm = document.getElementById("profileForm");
 const experimentForm = document.getElementById("experimentForm");
-const experimentList = document.getElementById("experimentList");
 const logoutBtn = document.getElementById("logoutBtn");
 
 const registerStatus = document.getElementById("registerStatus");
@@ -153,44 +152,32 @@ profileForm.addEventListener("submit", async (event) => {
   }
 });
 
-// 示例实验列表（可后端动态获取）
-const experiments = [
-  { id: "E202601", type: "视觉注意力测试", duration: "30分钟", reward: "50元" },
-  { id: "E202602", type: "脑电采集", duration: "60分钟", reward: "120元" },
-  { id: "E202603", type: "眼动追踪", duration: "40分钟", reward: "80元" }
-];
-
-function renderExperimentList() {
-  experimentList.innerHTML = experiments.map(exp => `
-    <label class="experiment-item">
-      <input type="checkbox" name="experiment_ids" value="${exp.id}" />
-      <span>${exp.type} <span class="experiment-meta">(${exp.id} · ${exp.duration} · 报酬：${exp.reward})</span></span>
-    </label>
-  `).join("");
-}
-
 experimentForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   setStatus(experimentStatus, "提交中...");
   try {
-    const checked = Array.from(experimentList.querySelectorAll("input[type=checkbox]:checked"));
-    if (checked.length === 0) {
-      setStatus(experimentStatus, "请选择要报名的实验", true);
+    const choices = experimentForm.querySelectorAll("input[name='experiment_choice']:checked");
+    if (choices.length === 0) {
+      setStatus(experimentStatus, "当前没有可报名实验", true);
       return;
     }
-    // 只报名第一个选中的实验（如需多选可循环）
-    const expId = checked[0].value;
-    const exp = experiments.find(e => e.id === expId);
-    await apiRequest("/experiments/apply", { method: "POST", json: { experiment_type: exp.type, experiment_id: exp.id } });
+    if (choices.length > 1) {
+      setStatus(experimentStatus, "请先选择一项实验", true);
+      return;
+    }
+
+    const choice = choices[0];
+    const payload = {
+      experiment_type: choice.dataset.type,
+      experiment_id: choice.dataset.id,
+    };
+    await apiRequest("/experiments/apply", { method: "POST", json: payload });
     setStatus(experimentStatus, "报名成功");
     experimentForm.reset();
-    renderExperimentList();
   } catch (error) {
     setStatus(experimentStatus, error.message, true);
   }
 });
-
-renderExperimentList();
 
 logoutBtn.addEventListener("click", async () => {
   try {

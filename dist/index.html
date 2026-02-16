@@ -64,8 +64,9 @@
               收款支付宝绑定手机号
               <input name="alipay_phone" required />
             </label>
-            <label class="consent">
-              <input type="checkbox" name="consent" required /><span>我已阅读并同意《信息收集与使用告知》</span>
+            <label class="consent-check">
+              <input type="checkbox" name="consent" required />
+              <span>我已阅读并同意《信息收集与使用告知》</span>
             </label>
             <button type="submit" class="primary">提交注册</button>
           </form>
@@ -139,24 +140,24 @@
                 右眼近视度数
                 <input name="right_myopia" />
               </label>
-              <div class="side-fields">
+              <div class="inline-two">
                 <label>
                   是否有金属植入物
+                  <span class="hint">如金属内固定、起搏器、植入式助听器等</span>
                   <select name="metal_implant">
                     <option value="">请选择</option>
                     <option value="无">无</option>
                     <option value="有">有</option>
                   </select>
-                  <span class="field-desc">包括心脏起搏器、人工关节、钢板、螺钉、植入芯片等。</span>
                 </label>
                 <label>
                   是否幽闭恐惧
+                  <span class="hint">如密闭空间焦虑、呼吸急促、明显不适等</span>
                   <select name="claustrophobia">
                     <option value="">请选择</option>
                     <option value="无">无</option>
                     <option value="有">有</option>
                   </select>
-                  <span class="field-desc">如密闭空间恐惧、MRI 检查时不适、强烈焦虑等。</span>
                 </label>
               </div>
               <label>
@@ -185,8 +186,8 @@
 
             <form id="experimentForm" class="form-grid">
               <h4>实验报名</h4>
-              <div id="experimentList">
-                <!-- 实验列表由 app.js 动态生成 -->
+              <div class="experiment-list">
+                <p class="hint">暂无开放实验。后续将在此处显示可报名的实验列表。</p>
               </div>
               <button type="submit" class="primary">提交报名</button>
               <p class="form-note" id="experimentStatus"></p>
@@ -195,19 +196,21 @@
         </div>
       </section>
 
-      <section class="card consent" id="consent">
+      <section class="card consent-section" id="consent">
         <h2>信息收集与使用告知</h2>
-        <p>
-          我们将收集您在注册与实验报名过程中提交的身份信息、联系方式及相关背景资料，用于科研被试管理、资格核验、
-          参与记录、报酬结算与安全合规目的。我们仅在实现上述目的的最小范围内处理您的信息，并采取加密、权限控制等措施保护。
-        </p>
-        <p>
-          您有权查询、更正或补充您的个人信息，也可以申请删除或限制处理。若您撤回同意，可能影响后续实验参与及报酬结算。
-          我们不会向无关第三方披露您的敏感信息，依法需要提供或经您授权的情形除外。
-        </p>
-        <p>
-          您提交信息即表示已阅读并理解本告知内容，并同意我们按照告知范围处理您的个人信息。若不同意，请勿继续提交注册。
-        </p>
+        <div class="consent-body">
+          <p>
+            我们将收集您在注册与实验报名过程中提交的身份信息、联系方式及相关背景资料，用于科研被试管理、资格核验、
+            参与记录、报酬结算与安全合规目的。我们仅在实现上述目的的最小范围内处理您的信息，并采取加密、权限控制等措施保护。
+          </p>
+          <p>
+            您有权查询、更正或补充您的个人信息，也可以申请删除或限制处理。若您撤回同意，可能影响后续实验参与及报酬结算。
+            我们不会向无关第三方披露您的敏感信息，依法需要提供或经您授权的情形除外。
+          </p>
+          <p>
+            您提交信息即表示已阅读并理解本告知内容，并同意我们按照告知范围处理您的个人信息。若不同意，请勿继续提交注册。
+          </p>
+        </div>
       </section>
     </main>
 
