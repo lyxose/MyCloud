@@ -51,13 +51,13 @@ main {
   display: flex;
   gap: 2rem;
   flex-wrap: wrap;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
 }
 
 .site-header > div:first-child {
   max-width: 720px;
-  padding-right: 220px;
+  padding-right: 0;
 }
 
 .eyebrow {
@@ -73,16 +73,13 @@ main {
 }
 
 .logo-bar {
-  position: absolute;
-  top: 1.2rem;
-  right: 2rem;
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.8rem;
-  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1.2rem;
+  margin-left: auto;
   pointer-events: none;
-  z-index: 2;
 }
 
 .logo-square {
@@ -109,7 +106,9 @@ main {
 
 @media (max-width: 600px) {
   .site-header {
-    padding-top: 6rem;
+    padding-top: 3rem;
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .site-header > div:first-child {
@@ -118,17 +117,19 @@ main {
   }
 
   .logo-bar {
-    top: 0.8rem;
-    left: 1rem;
-    right: 1rem;
+    position: static;
+    width: 100%;
     flex-direction: row;
     justify-content: space-between;
+    align-items: flex-start;
     gap: 0.5rem;
+    margin-bottom: 0rem;
+    order: -1;
   }
 
   .logo-square {
-    width: 22vw;
-    min-width: 72px;
+    width: 30vw;
+    min-width: 96px;
   }
 }
 
@@ -324,5 +325,7 @@ textarea:focus {
 @media (max-width: 720px) {
   .site-header {
     padding-top: 2.5rem;
+    gap: 0rem;
+    padding-top:0rem;
   }
 }
