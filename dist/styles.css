@@ -39,13 +39,7 @@ main {
 }
 
 .bg-orbit {
-  position: fixed;
-  inset: -40vh -20vw auto auto;
-  height: 70vh;
-  width: 70vh;
-  background: radial-gradient(circle at 30% 30%, rgba(58, 123, 213, 0.25), transparent 70%);
-  z-index: 0;
-  pointer-events: none;
+  /* removed for cleaner UI */
 }
 
 .site-header {
@@ -74,47 +68,68 @@ main {
 }
 
 .logo-row {
-  display: flex;
-  gap: 1rem;
-  align-items: center;
-  flex-wrap: wrap;
+  /* removed for new logo-bar */
 }
 
 .logo-slot {
-  height: clamp(48px, 8vw, 72px);
-  min-width: clamp(100px, 18vw, 180px);
-  padding: 0 1rem;
-  border-radius: 16px;
-  border: 1px dashed rgba(58, 123, 213, 0.4);
-  background: rgba(255, 255, 255, 0.7);
-  color: var(--muted);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.85rem;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
+  /* removed for new logo-square */
 }
 
 /* Responsive logo images */
 .logo-slot img {
-  max-height: 90%;
-  max-width: 90%;
-  width: auto;
-  height: auto;
-  object-fit: contain;
-  display: block;
+  /* removed for new logo-square img */
 }
 
 @media (max-width: 600px) {
-  .logo-row {
-    gap: 0.5rem;
+  /* removed for new logo-bar */
+/* Logo bar for left/right placement */
+.logo-bar {
+  position: absolute;
+  top: 2.2rem;
+  left: 0;
+  right: 0;
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+  z-index: 2;
+}
+.logo-square {
+  width: clamp(48px, 8vw, 72px);
+  height: clamp(48px, 8vw, 72px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  margin: 0 1vw;
+  pointer-events: auto;
+}
+.logo-square img {
+  width: 90%;
+  height: 90%;
+  object-fit: contain;
+  display: block;
+  background: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+.left-logo {
+  justify-content: flex-start;
+}
+.right-logo {
+  justify-content: flex-end;
+}
+@media (max-width: 600px) {
+  .logo-bar {
+    top: 1.2rem;
   }
-  .logo-slot {
+  .logo-square {
+    width: clamp(36px, 12vw, 48px);
     height: clamp(36px, 12vw, 48px);
-    min-width: clamp(80px, 28vw, 120px);
-    padding: 0 0.5rem;
+    margin: 0 0.5vw;
   }
+}
 }
 }
 
@@ -249,7 +264,9 @@ textarea:focus {
 }
 
 .consent {
-  background: linear-gradient(120deg, #f8fbff 0%, #e6f0fb 100%);
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
 }
 
 .site-footer {

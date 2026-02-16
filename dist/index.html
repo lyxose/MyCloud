@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div class="bg-orbit"></div>
+    <!-- <div class="bg-orbit"></div> -->
     <header class="site-header">
       <div>
         <p class="eyebrow">中国科学院心理研究所 IPCAS</p>
@@ -16,16 +16,16 @@
           注册、登录、完善信息并进行实验报名。您的个人信息将用于科研参与管理与安全合规目的。
         </p>
       </div>
-      <div class="logo-row">
-        <div class="logo-slot"><img src="assets/IPCAS_logo.png" alt="IPCAS" /></div>
-        <div class="logo-slot"><img src="assets/V&A_logo.png" alt="Lab" /></div>      </div>
+      <div class="logo-bar">
+        <div class="logo-square left-logo"><img src="assets/IPCAS_logo.png" alt="IPCAS" /></div>
+        <div class="logo-square right-logo"><img src="assets/V&A_logo.png" alt="Lab" /></div>
+      </div>
     </header>
 
     <main>
       <section class="card" id="auth">
         <div class="card-header">
           <h2>欢迎加入被试库</h2>
-          <p>初次注册只需填写必要字段，其余信息可在报名时补全。</p>
         </div>
 
         <div class="tab-row">
@@ -65,8 +65,7 @@
               <input name="alipay_phone" required />
             </label>
             <label class="consent">
-              <input type="checkbox" name="consent" required />
-              我已阅读并同意《信息收集与使用告知》
+              <input type="checkbox" name="consent" required /><span>我已阅读并同意《信息收集与使用告知》</span>
             </label>
             <button type="submit" class="primary">提交注册</button>
           </form>
