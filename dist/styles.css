@@ -81,8 +81,8 @@ main {
 }
 
 .logo-slot {
-  height: 64px;
-  min-width: 140px;
+  height: clamp(48px, 8vw, 72px);
+  min-width: clamp(100px, 18vw, 180px);
   padding: 0 1rem;
   border-radius: 16px;
   border: 1px dashed rgba(58, 123, 213, 0.4);
@@ -94,6 +94,28 @@ main {
   font-size: 0.85rem;
   text-transform: uppercase;
   letter-spacing: 0.1em;
+}
+
+/* Responsive logo images */
+.logo-slot img {
+  max-height: 90%;
+  max-width: 90%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  display: block;
+}
+
+@media (max-width: 600px) {
+  .logo-row {
+    gap: 0.5rem;
+  }
+  .logo-slot {
+    height: clamp(36px, 12vw, 48px);
+    min-width: clamp(80px, 28vw, 120px);
+    padding: 0 0.5rem;
+  }
+}
 }
 
 .card {
