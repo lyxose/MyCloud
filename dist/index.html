@@ -1,26 +1,255 @@
 <!DOCTYPE html>
-<html>
-<head>
-  <title>Test Input</title>
-</head>
-<body>
-  <h1>Cloudflare Test Page</h1>
-  <form id="testForm">
-    <input type="text" id="userInput" placeholder="Enter something..." />
-    <button type="submit">Submit</button>
-  </form>
-  <p id="status"></p>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>IPCAS 视觉与注意课题组 在线被试库</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="bg-orbit"></div>
+    <header class="site-header">
+      <div>
+        <p class="eyebrow">中国科学院心理研究所 IPCAS</p>
+        <h1>视觉与注意课题组 在线被试库</h1>
+        <p class="subtitle">
+          注册、登录、完善信息并进行实验报名。所有信息遵循合规要求加密存储，管理员仅在必要时解密使用。
+        </p>
+      </div>
+      <div class="quick-panel">
+        <p class="panel-title">快速入口</p>
+        <div class="pill-row">
+          <button class="pill" data-target="auth">注册/登录</button>
+          <button class="pill" data-target="profile">个人主页</button>
+          <button class="pill" data-target="admin">管理员</button>
+        </div>
+      </div>
+    </header>
 
-  <script>
-    document.getElementById("testForm").addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const input = document.getElementById("userInput").value;
-      const response = await fetch("/api/save", {
-        method: "POST",
-        body: JSON.stringify({ data: input }),
-      });
-      document.getElementById("status").innerText = await response.text();
-    });
-  </script>
-</body>
+    <main>
+      <section class="card" id="auth">
+        <div class="card-header">
+          <h2>欢迎加入被试库</h2>
+          <p>初次注册只需填写必要字段，其余信息可在报名时补全。</p>
+        </div>
+
+        <div class="tab-row">
+          <button class="tab active" data-tab="register">注册</button>
+          <button class="tab" data-tab="login">登录</button>
+        </div>
+
+        <div class="tab-panel active" id="tab-register">
+          <form id="registerForm" class="form-grid">
+            <label>
+              姓名
+              <input name="name" required />
+            </label>
+            <label>
+              密码
+              <input name="password" type="password" minlength="6" required />
+            </label>
+            <label>
+              性别
+              <select name="gender" required>
+                <option value="">请选择</option>
+                <option value="男">男</option>
+                <option value="女">女</option>
+                <option value="其他">其他</option>
+              </select>
+            </label>
+            <label>
+              所在单位
+              <input name="unit" required />
+            </label>
+            <label>
+              身份证号
+              <input name="idcard" required />
+            </label>
+            <label>
+              收款支付宝绑定手机号
+              <input name="alipay_phone" required />
+            </label>
+            <label class="consent">
+              <input type="checkbox" name="consent" required />
+              我已阅读并同意《信息收集与使用告知》
+            </label>
+            <button type="submit" class="primary">提交注册</button>
+          </form>
+          <p class="form-note" id="registerStatus"></p>
+        </div>
+
+        <div class="tab-panel" id="tab-login">
+          <form id="loginForm" class="form-grid">
+            <label>
+              唯一 ID (U000001)
+              <input name="user_uid" />
+            </label>
+            <label>
+              或身份证号
+              <input name="idcard" />
+            </label>
+            <label>
+              密码
+              <input name="password" type="password" required />
+            </label>
+            <button type="submit" class="primary">登录</button>
+          </form>
+          <p class="form-note" id="loginStatus"></p>
+        </div>
+      </section>
+
+      <section class="card" id="profile">
+        <div class="card-header">
+          <h2>个人主页</h2>
+          <p>登录后可更新信息并报名实验。</p>
+        </div>
+        <div id="profileEmpty" class="empty-state">
+          <p>请先登录以查看个人信息。</p>
+        </div>
+        <div id="profileArea" class="hidden">
+          <div class="profile-summary">
+            <div>
+              <p class="eyebrow">当前登录</p>
+              <h3 id="profileName"></h3>
+              <p id="profileUid"></p>
+              <p id="profileMeta"></p>
+            </div>
+            <button id="logoutBtn" class="ghost">退出登录</button>
+          </div>
+
+          <div class="split">
+            <form id="profileForm" class="form-grid">
+              <h4>更新个人信息</h4>
+              <label>
+                微信号
+                <input name="wechat" />
+              </label>
+              <label>
+                所在地区
+                <input name="region" />
+              </label>
+              <label>
+                左/右利手
+                <select name="handedness">
+                  <option value="">请选择</option>
+                  <option value="左利手">左利手</option>
+                  <option value="右利手">右利手</option>
+                  <option value="双利手">双利手</option>
+                </select>
+              </label>
+              <label>
+                左眼近视度数
+                <input name="left_myopia" />
+              </label>
+              <label>
+                右眼近视度数
+                <input name="right_myopia" />
+              </label>
+              <label>
+                是否有金属植入物
+                <select name="metal_implant">
+                  <option value="">请选择</option>
+                  <option value="无">无</option>
+                  <option value="有">有</option>
+                </select>
+              </label>
+              <label>
+                是否幽闭恐惧
+                <select name="claustrophobia">
+                  <option value="">请选择</option>
+                  <option value="无">无</option>
+                  <option value="有">有</option>
+                </select>
+              </label>
+              <label>
+                民族
+                <input name="ethnicity" />
+              </label>
+              <label>
+                受教育年限
+                <input name="education_years" />
+              </label>
+              <label>
+                身高 (cm)
+                <input name="height_cm" />
+              </label>
+              <label>
+                体重 (kg)
+                <input name="weight_kg" />
+              </label>
+              <label>
+                头围 (cm)
+                <input name="head_circumference_cm" />
+              </label>
+              <button type="submit" class="primary">保存更新</button>
+              <p class="form-note" id="profileStatus"></p>
+            </form>
+
+            <form id="experimentForm" class="form-grid">
+              <h4>实验报名</h4>
+              <label>
+                实验类型
+                <input name="experiment_type" required />
+              </label>
+              <label>
+                实验编号
+                <input name="experiment_id" required />
+              </label>
+              <button type="submit" class="primary">提交报名</button>
+              <p class="form-note" id="experimentStatus"></p>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" id="admin">
+        <div class="card-header">
+          <h2>管理员工作台</h2>
+          <p>仅管理员可查看与更新敏感信息。</p>
+        </div>
+        <div id="adminEmpty" class="empty-state">
+          <p>管理员登录后可使用此区域。</p>
+        </div>
+        <div id="adminArea" class="hidden">
+          <div class="split">
+            <div class="admin-panel">
+              <h4>用户列表</h4>
+              <button id="loadUsers" class="ghost">加载最新 50 名</button>
+              <div id="userList" class="scroll"></div>
+            </div>
+            <div class="admin-panel">
+              <h4>查询/更新用户</h4>
+              <label>
+                用户 ID
+                <input id="adminUserUid" placeholder="U000001" />
+              </label>
+              <button id="adminLoadUser" class="ghost">加载用户详情</button>
+              <pre id="adminUserDetail" class="code"></pre>
+              <label>
+                更新 JSON
+                <textarea id="adminUpdateJson" rows="6" placeholder='{"region":"北京","role":"admin"}'></textarea>
+              </label>
+              <button id="adminUpdateUser" class="primary">提交更新</button>
+              <button id="adminPromote" class="ghost">设为管理员</button>
+              <p class="form-note" id="adminStatus"></p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card consent" id="consent">
+        <h2>信息收集与使用告知</h2>
+        <p>
+          本系统仅用于科研目的，被试信息将加密存储，管理员仅在必要时解密使用。您可随时申请更新或删除个人数据。
+          若不同意本告知，请勿提交注册信息。
+        </p>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>IPCAS 视觉与注意课题组 · 在线被试库</p>
+    </footer>
+
+    <script src="app.js"></script>
+  </body>
 </html>
