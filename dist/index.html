@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>IPCAS 视觉与注意课题组 在线被试库</title>
+    <title>IPCAS 视觉与注意课题组 在线招募平台</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -11,7 +11,7 @@
     <header class="site-header">
       <div>
         <p class="eyebrow">中国科学院心理研究所 IPCAS</p>
-        <h1>视觉与注意课题组 在线被试库</h1>
+        <h1>视觉与注意课题组 在线招募平台</h1>
         <p class="subtitle">
           注册、登录、完善信息并进行实验报名。您的个人信息将用于科研参与管理与安全合规目的。
         </p>
@@ -25,7 +25,7 @@
     <main>
       <section class="card" id="auth">
         <div class="card-header">
-          <h2>欢迎加入被试库</h2>
+          <h2>感谢参与招募，注册登录后即可报名实验</h2>
         </div>
 
         <div class="tab-row">
@@ -41,7 +41,11 @@
             </label>
             <label>
               密码
-              <input name="password" type="password" minlength="6" required />
+              <input name="password" type="password" minlength="6" required placeholder="注意留存、无法找回" />
+            </label>
+            <label>
+              确认密码
+              <input name="password_confirm" type="password" minlength="6" required />
             </label>
             <label>
               性别
@@ -53,8 +57,11 @@
               </select>
             </label>
             <label>
-              所在单位
-              <input name="unit" required />
+              所在学校/单位全称
+              <div class="autocomplete">
+                <input name="unit" id="unitInput" required placeholder="如无联想结果，将按输入内容新增" autocomplete="off" />
+                <div class="autocomplete-list" id="unitSuggestions"></div>
+              </div>
             </label>
             <label>
               身份证号
@@ -76,12 +83,8 @@
         <div class="tab-panel" id="tab-login">
           <form id="loginForm" class="form-grid">
             <label>
-              唯一 ID (U000001)
-              <input name="user_uid" />
-            </label>
-            <label>
-              或身份证号
-              <input name="idcard" />
+              系统内ID / 身份证号
+              <input name="credential" placeholder="U123456 或 18位身份证号" />
             </label>
             <label>
               密码
@@ -109,27 +112,94 @@
               <p id="profileUid"></p>
               <p id="profileMeta"></p>
             </div>
-            <button id="logoutBtn" class="ghost">退出登录</button>
+            <div class="profile-actions">
+              <button id="changePasswordBtn" class="ghost">更新密码</button>
+              <button id="logoutBtn" class="ghost">退出登录</button>
+            </div>
+          </div>
+
+          <div id="passwordPanel" class="password-panel hidden">
+            <div class="password-panel-header">
+              <h4>更新密码</h4>
+              <button type="button" class="ghost" id="passwordPanelClose">关闭</button>
+            </div>
+            <form id="passwordForm" class="form-grid">
+              <label>
+                当前密码
+                <input name="current_password" type="password" />
+              </label>
+              <label>
+                新密码
+                <input name="new_password" type="password" minlength="6" required />
+              </label>
+              <label>
+                确认新密码
+                <input name="new_password_confirm" type="password" minlength="6" required />
+              </label>
+              <div id="rootPasswordSection" class="inline-two hidden">
+                <label>
+                  目标被试ID
+                  <input name="target_user_uid" placeholder="U000123" />
+                </label>
+                <label>
+                  Root密码确认
+                  <input name="root_password" type="password" />
+                </label>
+              </div>
+              <button type="submit" class="primary">提交更新</button>
+              <p class="form-note" id="passwordStatus"></p>
+            </form>
           </div>
 
           <div class="split">
-            <form id="profileForm" class="form-grid">
-              <h4>更新个人信息</h4>
+            <div class="profile-pane" id="profilePane">
+              <div class="profile-pane-header">
+                <h4>更新个人信息</h4>
+                <button type="button" class="ghost" id="profileToggle">收起</button>
+              </div>
+              <form id="profileForm" class="form-grid">
               <label>
                 微信号
                 <input name="wechat" />
               </label>
               <label>
-                所在地区
-                <input name="region" />
-              </label>
-              <label>
-                左/右利手
-                <select name="handedness">
+                所在省份
+                <select name="region" id="provinceSelect">
                   <option value="">请选择</option>
-                  <option value="左利手">左利手</option>
-                  <option value="右利手">右利手</option>
-                  <option value="双利手">双利手</option>
+                  <option value="北京市">北京市</option>
+                  <option value="天津市">天津市</option>
+                  <option value="河北省">河北省</option>
+                  <option value="山西省">山西省</option>
+                  <option value="内蒙古自治区">内蒙古自治区</option>
+                  <option value="辽宁省">辽宁省</option>
+                  <option value="吉林省">吉林省</option>
+                  <option value="黑龙江省">黑龙江省</option>
+                  <option value="上海市">上海市</option>
+                  <option value="江苏省">江苏省</option>
+                  <option value="浙江省">浙江省</option>
+                  <option value="安徽省">安徽省</option>
+                  <option value="福建省">福建省</option>
+                  <option value="江西省">江西省</option>
+                  <option value="山东省">山东省</option>
+                  <option value="河南省">河南省</option>
+                  <option value="湖北省">湖北省</option>
+                  <option value="湖南省">湖南省</option>
+                  <option value="广东省">广东省</option>
+                  <option value="广西壮族自治区">广西壮族自治区</option>
+                  <option value="海南省">海南省</option>
+                  <option value="重庆市">重庆市</option>
+                  <option value="四川省">四川省</option>
+                  <option value="贵州省">贵州省</option>
+                  <option value="云南省">云南省</option>
+                  <option value="西藏自治区">西藏自治区</option>
+                  <option value="陕西省">陕西省</option>
+                  <option value="甘肃省">甘肃省</option>
+                  <option value="青海省">青海省</option>
+                  <option value="宁夏回族自治区">宁夏回族自治区</option>
+                  <option value="新疆维吾尔自治区">新疆维吾尔自治区</option>
+                  <option value="香港特别行政区">香港特别行政区</option>
+                  <option value="澳门特别行政区">澳门特别行政区</option>
+                  <option value="台湾">台湾</option>
                 </select>
               </label>
               <label>
@@ -143,6 +213,15 @@
               <label>
                 民族
                 <input name="ethnicity" />
+              </label>
+              <label>
+                左/右利手
+                <select name="handedness">
+                  <option value="">请选择</option>
+                  <option value="左利手">左利手</option>
+                  <option value="右利手">右利手</option>
+                  <option value="双利手">双利手</option>
+                </select>
               </label>
               <label>
                 受教育年限
@@ -182,7 +261,8 @@
               </div>
               <button type="submit" class="primary">保存更新</button>
               <p class="form-note" id="profileStatus"></p>
-            </form>
+              </form>
+            </div>
 
             <form id="experimentForm" class="experiment-panel">
               <h4>实验报名</h4>
@@ -193,7 +273,125 @@
               <p class="form-note" id="experimentStatus"></p>
             </form>
           </div>
+
+          <div id="adminArea" class="admin-area hidden">
+            <div class="admin-tabs" id="adminTabs">
+              <button class="tab active" data-admin-tab="new">新实验</button>
+            </div>
+            <div class="admin-panel active" id="adminPanelNew">
+              <div class="admin-layout">
+                <div class="admin-left">
+                  <label>
+                    入组条件
+                    <textarea id="adminConditions" rows="4">年龄>=18
+左/右利手=右</textarea>
+                  </label>
+                  <label>
+                    名额分配
+                    <textarea id="adminQuota" rows="4">性别=男*10 & =女*10
+年龄[18,30)*20 & >30*0 & [0,18)*0
+左/右利手=右*20</textarea>
+                  </label>
+                  <button type="button" class="ghost info-trigger" id="quotaHelpBtn">设置说明</button>
+                  <div class="info-bubble" id="quotaHelpBubble">
+                    <strong>需要同时满足入组条件和名额分配条件的被试才可报名，注意检查两组条件设置是否冲突！</strong>
+                    <p>入组条件示例：<span class="mono">年龄>=18 & 年龄<30 & (左眼近视度数<600|右眼近视度数<600)</span></p>
+                    <p>名额分配示例：<span class="mono">ALL*20</span> 或 <span class="mono">性别=男*10 & =女*10</span></p>
+                  </div>
+                </div>
+                <div class="admin-right">
+                  <form id="adminExperimentForm" class="form-grid">
+                    <label>
+                      主试联系方式（手机号）
+                      <input name="contact_phone" id="adminContactPhone" required />
+                    </label>
+                    <label>
+                      实验名称
+                      <input name="name" required />
+                    </label>
+                    <label>
+                      实验类型
+                      <select name="type" required>
+                        <option value="">请选择</option>
+                        <option value="行为">行为</option>
+                        <option value="EEG">EEG</option>
+                        <option value="MEG">MEG</option>
+                        <option value="MRI">MRI</option>
+                        <option value="NIRS">NIRS</option>
+                        <option value="眼动">眼动</option>
+                        <option value="TSM">TSM</option>
+                        <option value="其他">其他</option>
+                      </select>
+                    </label>
+                    <label>
+                      地点
+                      <select name="location" id="locationSelect">
+                        <option value="在线">在线</option>
+                        <option value="604-2">604-2</option>
+                        <option value="604-3">604-3</option>
+                        <option value="604-4">604-4</option>
+                        <option value="604-5">604-5</option>
+                        <option value="其他">其他</option>
+                      </select>
+                    </label>
+                    <label id="locationCustomField" class="hidden">
+                      自定义地点
+                      <input name="location_custom" />
+                    </label>
+                    <label id="locationLinkField" class="hidden">
+                      实验链接
+                      <input name="location_link" />
+                    </label>
+                    <label>
+                      内容简介
+                      <textarea name="description" rows="3"></textarea>
+                    </label>
+                    <label>
+                      特殊说明
+                      <textarea name="notes" rows="2"></textarea>
+                    </label>
+                    <label>
+                      预计时长（分钟）
+                      <input name="duration_min" type="number" min="1" required />
+                    </label>
+                    <label>
+                      报酬
+                      <input name="reward" required />
+                    </label>
+                    <label>
+                      按时间段预约
+                      <select name="schedule_required" id="scheduleRequired">
+                        <option value="yes">是</option>
+                        <option value="no">否</option>
+                      </select>
+                    </label>
+                    <div class="schedule-editor hidden" id="scheduleEditor">
+                      <div class="schedule-header">
+                        <button type="button" class="ghost" id="schedulePrev">◀</button>
+                        <div id="scheduleTitle"></div>
+                        <button type="button" class="ghost" id="scheduleNext">▶</button>
+                        <button type="button" class="ghost" id="scheduleFill">一键填充</button>
+                        <button type="button" class="ghost" id="scheduleRefresh">刷新</button>
+                      </div>
+                      <div class="schedule-grid" id="scheduleGrid"></div>
+                    </div>
+                    <button type="submit" class="primary">确认发布实验</button>
+                    <p class="form-note" id="adminExperimentStatus"></p>
+                  </form>
+                </div>
+              </div>
+            </div>
+            <div class="admin-panel" id="adminPanelExperiments"></div>
+          </div>
         </div>
+      </section>
+
+      <section class="card admin-experiments hidden" id="adminExperiments">
+        <div class="card-header">
+          <h2>实验与被试管理</h2>
+          <button class="ghost" id="adminExperimentsRefresh">刷新列表</button>
+        </div>
+        <div id="adminExperimentList" class="admin-experiment-list"></div>
       </section>
 
       <section class="card consent-section" id="consent">
