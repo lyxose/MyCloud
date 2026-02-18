@@ -1423,17 +1423,6 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
       setStatus(adminExperimentStatus, error.message, true);
     }
   });
-    const editableSlots = slots
-      .filter((slot) => slot.locked === 0)
-      .map(convertSlotToSchedule)
-      .filter(Boolean);
-    adminScheduleState.slots = editableSlots;
-    adminScheduleState.selectedIds.clear();
-    if (editableSlots.length > 0) {
-      adminScheduleState.weekStart = startOfWeek(new Date(`${editableSlots[0].date}T00:00:00`));
-    }
-    renderAdminEditScheduleGrid();
-  });
 
   editSchedulePrev?.addEventListener("click", () => {
     const todayStart = startOfWeek(new Date());
@@ -1680,10 +1669,7 @@ async function applyExperiment(exp, slot) {
   }
 }
 
-
-// 只为注册/登录tab绑定切换事件，避免与admin等其他tab冲突
-const authTabs = document.querySelectorAll("#auth .tab");
-authTabs.forEach((tab) => {
+tabs.forEach((tab) => {
   tab.addEventListener("click", () => toggleTab(tab.dataset.tab));
 });
 
