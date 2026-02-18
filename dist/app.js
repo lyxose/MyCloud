@@ -167,6 +167,7 @@ function applyRoleLayout() {
   profilePane?.classList.toggle("hidden", isAdmin);
   experimentForm?.classList.toggle("hidden", isAdmin);
   profileSplit?.classList.toggle("hidden", isAdmin);
+  profileToggle?.classList.toggle("hidden", isAdmin);
   adminArea?.classList.toggle("hidden", !isAdmin);
   adminExperimentsSection?.classList.toggle("hidden", !isAdmin);
   consentSection?.classList.toggle("hidden", isAdmin);
@@ -569,12 +570,11 @@ function enableSlotResize(slotEl, slot, renderFn, stateRef) {
   if (!topHandle || !bottomHandle) return;
 
   let resizing = null;
+  let resizeContext = null;
 
   const handleResize = (clientY) => {
-    const body = slotEl.closest(".schedule-day-body");
-    if (!body) return;
-    const rect = body.getBoundingClientRect();
-    const offsetY = clientY - rect.top + getViewOffsetPx(stateRef);
+    if (!resizeContext) return;
+    const offsetY = clientY - resizeContext.bodyTop + resizeContext.viewOffset;
     const targetMin = Math.max(0, Math.round(offsetY / PX_PER_MIN / 10) * 10);
     const minDuration = 10;
 
@@ -602,6 +602,7 @@ function enableSlotResize(slotEl, slot, renderFn, stateRef) {
 
   const onUp = () => {
     resizing = null;
+    resizeContext = null;
     document.removeEventListener("mousemove", onMove);
     document.removeEventListener("mouseup", onUp);
   };
@@ -609,6 +610,12 @@ function enableSlotResize(slotEl, slot, renderFn, stateRef) {
   const bindHandle = (handle, edge) => {
     handle.addEventListener("mousedown", (event) => {
       event.stopPropagation();
+      const body = slotEl.closest(".schedule-day-body");
+      if (!body) return;
+      resizeContext = {
+        bodyTop: body.getBoundingClientRect().top,
+        viewOffset: getViewOffsetPx(stateRef),
+      };
       resizing = edge;
       document.addEventListener("mousemove", onMove);
       document.addEventListener("mouseup", onUp);
@@ -616,6 +623,12 @@ function enableSlotResize(slotEl, slot, renderFn, stateRef) {
 
     handle.addEventListener("touchstart", (event) => {
       event.stopPropagation();
+      const body = slotEl.closest(".schedule-day-body");
+      if (!body) return;
+      resizeContext = {
+        bodyTop: body.getBoundingClientRect().top,
+        viewOffset: getViewOffsetPx(stateRef),
+      };
       resizing = edge;
     });
 
@@ -627,6 +640,7 @@ function enableSlotResize(slotEl, slot, renderFn, stateRef) {
 
     handle.addEventListener("touchend", () => {
       resizing = null;
+      resizeContext = null;
     });
   };
 
