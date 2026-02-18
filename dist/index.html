@@ -125,10 +125,6 @@
             </div>
             <form id="passwordForm" class="form-grid">
               <label>
-                当前密码
-                <input name="current_password" type="password" />
-              </label>
-              <label>
                 新密码
                 <input name="new_password" type="password" minlength="6" required />
               </label>
@@ -151,6 +147,28 @@
             </form>
           </div>
 
+          <div id="contactPanel" class="password-panel hidden">
+            <div class="password-panel-header">
+              <h4>更新联系方式</h4>
+            </div>
+            <form id="contactForm" class="form-grid">
+              <label>
+                收款支付宝绑定手机号
+                <input name="alipay_phone" required />
+              </label>
+              <label>
+                微信号
+                <input name="wechat" />
+              </label>
+              <label>
+                所在学校/单位全称
+                <input name="unit" required />
+              </label>
+              <button type="submit" class="primary">保存更新</button>
+              <p class="form-note" id="contactStatus"></p>
+            </form>
+          </div>
+
           <div class="split">
             <div class="profile-pane" id="profilePane">
               <div class="profile-pane-header">
@@ -158,6 +176,14 @@
                 <button type="button" class="ghost" id="profileToggle">收起</button>
               </div>
               <form id="profileForm" class="form-grid">
+              <label>
+                收款支付宝绑定手机号
+                <input name="alipay_phone" required />
+              </label>
+              <label>
+                所在学校/单位全称
+                <input name="unit" required />
+              </label>
               <label>
                 微信号
                 <input name="wechat" />
@@ -213,6 +239,7 @@
               <label>
                 民族
                 <input name="ethnicity" />
+                <span class="hint">提交后不可修改，如需更正请联系管理员</span>
               </label>
               <label>
                 左/右利手
@@ -292,11 +319,16 @@
 年龄[18,30)*20 & >30*0 & [0,18)*0
 左/右利手=右*20</textarea>
                   </label>
-                  <button type="button" class="ghost info-trigger" id="quotaHelpBtn">设置说明</button>
-                  <div class="info-bubble" id="quotaHelpBubble">
-                    <strong>需要同时满足入组条件和名额分配条件的被试才可报名，注意检查两组条件设置是否冲突！</strong>
-                    <p>入组条件示例：<span class="mono">年龄>=18 & 年龄<30 & (左眼近视度数<600|右眼近视度数<600)</span></p>
-                    <p>名额分配示例：<span class="mono">ALL*20</span> 或 <span class="mono">性别=男*10 & =女*10</span></p>
+                  <div class="info-card" id="quotaHelpBubble">
+                    <strong>设置说明（入组条件 + 名额分配）</strong>
+                    <p>1) 入组条件写法：字段 + 比较符号 + 值；使用 <span class="mono">&</span> 表示同时满足，<span class="mono">|</span> 表示二选一，括号用于分组。</p>
+                    <p>可用字段：<span class="mono">年龄</span>、<span class="mono">所在地区</span>、<span class="mono">左/右利手</span>、<span class="mono">左眼近视度数</span>、<span class="mono">右眼近视度数</span>、<span class="mono">民族</span>、<span class="mono">受教育年限</span>、<span class="mono">身高</span>、<span class="mono">体重</span>、<span class="mono">头围</span>。</p>
+                    <p>示例：<span class="mono">年龄>=18 & 年龄<30 & (左眼近视度数<600|右眼近视度数<600)</span></p>
+                    <p>2) 名额分配写法：每行是一组配额；同一行内用 <span class="mono">&</span> 连接多个条件；<span class="mono">条件*人数</span>；使用 <span class="mono">ALL*20</span> 表示不限条件。</p>
+                    <p>区间写法：<span class="mono">年龄[18,30)</span> 表示 $18\le \text{年龄}<30$；<span class="mono">[</span> 与 <span class="mono">]</span> 表示包含，<span class="mono">(</span> 与 <span class="mono">)</span> 表示不包含。</p>
+                    <p>示例：<span class="mono">性别=男*10 & =女*10</span></p>
+                    <p>示例：<span class="mono">年龄[18,30)*20 & >30*0 & [0,18)*0</span></p>
+                    <p class="hint">注意：入组条件与名额分配需同时满足，条件之间不可冲突。</p>
                   </div>
                 </div>
                 <div class="admin-right">
@@ -365,20 +397,20 @@
                         <option value="no">否</option>
                       </select>
                     </label>
-                    <div class="schedule-editor hidden" id="scheduleEditor">
-                      <div class="schedule-header">
-                        <button type="button" class="ghost" id="schedulePrev">◀</button>
-                        <div id="scheduleTitle"></div>
-                        <button type="button" class="ghost" id="scheduleNext">▶</button>
-                        <button type="button" class="ghost" id="scheduleFill">一键填充</button>
-                        <button type="button" class="ghost" id="scheduleRefresh">刷新</button>
-                      </div>
-                      <div class="schedule-grid" id="scheduleGrid"></div>
-                    </div>
                     <button type="submit" class="primary">确认发布实验</button>
                     <p class="form-note" id="adminExperimentStatus"></p>
                   </form>
                 </div>
+              </div>
+              <div class="schedule-editor hidden full-width" id="scheduleEditor">
+                <div class="schedule-header">
+                  <button type="button" class="ghost" id="schedulePrev">◀</button>
+                  <div id="scheduleTitle"></div>
+                  <button type="button" class="ghost" id="scheduleNext">▶</button>
+                  <button type="button" class="ghost" id="scheduleFill">一键填充</button>
+                  <button type="button" class="ghost" id="scheduleRefresh">刷新</button>
+                </div>
+                <div class="schedule-grid" id="scheduleGrid"></div>
               </div>
             </div>
             <div class="admin-panel" id="adminPanelExperiments"></div>

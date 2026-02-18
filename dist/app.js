@@ -79,6 +79,9 @@ const passwordPanelClose = document.getElementById("passwordPanelClose");
 const passwordForm = document.getElementById("passwordForm");
 const passwordStatus = document.getElementById("passwordStatus");
 const rootPasswordSection = document.getElementById("rootPasswordSection");
+const contactPanel = document.getElementById("contactPanel");
+const contactForm = document.getElementById("contactForm");
+const contactStatus = document.getElementById("contactStatus");
 
 const adminArea = document.getElementById("adminArea");
 const adminTabs = document.getElementById("adminTabs");
@@ -88,7 +91,6 @@ const adminExperimentStatus = document.getElementById("adminExperimentStatus");
 const adminContactPhone = document.getElementById("adminContactPhone");
 const adminConditions = document.getElementById("adminConditions");
 const adminQuota = document.getElementById("adminQuota");
-const quotaHelpBtn = document.getElementById("quotaHelpBtn");
 const quotaHelpBubble = document.getElementById("quotaHelpBubble");
 const scheduleEditor = document.getElementById("scheduleEditor");
 const scheduleGrid = document.getElementById("scheduleGrid");
@@ -159,11 +161,14 @@ function applyRoleLayout() {
   adminExperimentsSection?.classList.toggle("hidden", !isAdmin);
   consentSection?.classList.toggle("hidden", isAdmin);
   rootPasswordSection?.classList.toggle("hidden", state.role !== "root");
+  contactPanel?.classList.toggle("hidden", !isAdmin);
 }
 
 function populateProfileForm(profile) {
   if (!profile) return;
   const mapping = {
+    alipay_phone: profile.alipay_phone,
+    unit: profile.unit,
     wechat: profile.wechat,
     region: profile.region,
     handedness: profile.handedness,
@@ -180,6 +185,23 @@ function populateProfileForm(profile) {
 
   Object.entries(mapping).forEach(([key, value]) => {
     const field = profileForm?.elements?.namedItem?.(key);
+    if (!field) return;
+    field.value = value ?? "";
+  });
+
+  const ethnicityField = profileForm?.elements?.namedItem?.("ethnicity");
+  if (ethnicityField) {
+    ethnicityField.value = profile.ethnicity ?? "";
+    ethnicityField.disabled = !!profile.ethnicity;
+  }
+
+  const contactMapping = {
+    alipay_phone: profile.alipay_phone,
+    wechat: profile.wechat,
+    unit: profile.unit,
+  };
+  Object.entries(contactMapping).forEach(([key, value]) => {
+    const field = contactForm?.elements?.namedItem?.(key);
     if (!field) return;
     field.value = value ?? "";
   });
@@ -214,11 +236,14 @@ const scheduleState = {
   slots: [],
   selectedIds: new Set(),
   activeDayIndex: 0,
+  scrollTop: 960,
 };
 
 const PX_PER_MIN = 2;
 let capacityBuffer = "";
 let capacityTimer = null;
+let scheduleSyncing = false;
+let adminScheduleSyncing = false;
 
 function startOfWeek(date) {
   const d = new Date(date);
@@ -227,6 +252,32 @@ function startOfWeek(date) {
   d.setDate(d.getDate() + diff);
   d.setHours(0, 0, 0, 0);
   return d;
+}
+
+function isDateBeforeToday(date) {
+  const today = new Date();
+  const normalized = new Date(date);
+  normalized.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0);
+  return normalized < today;
+}
+
+function syncScheduleScroll(container, currentBody, stateRef, isAdmin) {
+  if (!container) return;
+  if (isAdmin ? adminScheduleSyncing : scheduleSyncing) return;
+  if (isAdmin) adminScheduleSyncing = true;
+  else scheduleSyncing = true;
+
+  const targetTop = currentBody.scrollTop;
+  stateRef.scrollTop = targetTop;
+  const bodies = container.querySelectorAll(".schedule-day-body");
+  bodies.forEach((body) => {
+    if (body === currentBody) return;
+    body.scrollTop = targetTop;
+  });
+
+  if (isAdmin) adminScheduleSyncing = false;
+  else scheduleSyncing = false;
 }
 
 function formatDateLabel(date) {
@@ -264,7 +315,8 @@ function renderScheduleGrid() {
 
     const body = document.createElement("div");
     body.className = "schedule-day-body";
-    body.scrollTop = 8 * 60 * PX_PER_MIN;
+    body.scrollTop = scheduleState.scrollTop || 8 * 60 * PX_PER_MIN;
+    body.addEventListener("scroll", () => syncScheduleScroll(scheduleGrid, body, scheduleState, false));
     const timeline = document.createElement("div");
     timeline.className = "schedule-timeline";
     timeline.dataset.date = date.toISOString().slice(0, 10);
@@ -292,8 +344,20 @@ function renderScheduleGrid() {
       timeline.appendChild(past);
     }
 
+    if (isDateBeforeToday(date)) {
+      const past = document.createElement("div");
+      past.className = "schedule-past";
+      past.style.top = "0px";
+      past.style.height = "100%";
+      timeline.appendChild(past);
+    }
+
     timeline.addEventListener("click", (event) => {
       if (event.target.classList.contains("schedule-slot")) return;
+      if (isDateBeforeToday(date)) {
+        setStatus(adminExperimentStatus, "不能选择今天之前的日期", true);
+        return;
+      }
       const rect = timeline.getBoundingClientRect();
       const offsetY = event.clientY - rect.top + timeline.scrollTop;
       const startMin = Math.max(0, Math.round(offsetY / PX_PER_MIN / 10) * 10);
@@ -379,6 +443,7 @@ function toggleSlotSelection(id) {
 }
 
 function enableSlotDrag(slotEl, slot) {
+  if (isDateBeforeToday(new Date(`${slot.date}T00:00:00`))) return;
   let startY = 0;
   let startMin = slot.startMin;
   let endMin = slot.endMin;
@@ -492,6 +557,7 @@ const adminScheduleState = {
   slots: [],
   selectedIds: new Set(),
   activeDayIndex: 0,
+  scrollTop: 960,
 };
 
 function renderAdminEditScheduleGrid() {
@@ -514,7 +580,8 @@ function renderAdminEditScheduleGrid() {
 
     const body = document.createElement("div");
     body.className = "schedule-day-body";
-    body.scrollTop = 8 * 60 * PX_PER_MIN;
+    body.scrollTop = adminScheduleState.scrollTop || 8 * 60 * PX_PER_MIN;
+    body.addEventListener("scroll", () => syncScheduleScroll(container, body, adminScheduleState, true));
     const timeline = document.createElement("div");
     timeline.className = "schedule-timeline";
     timeline.dataset.date = date.toISOString().slice(0, 10);
@@ -527,8 +594,20 @@ function renderAdminEditScheduleGrid() {
       timeline.appendChild(hourLine);
     }
 
+    if (isDateBeforeToday(date)) {
+      const past = document.createElement("div");
+      past.className = "schedule-past";
+      past.style.top = "0px";
+      past.style.height = "100%";
+      timeline.appendChild(past);
+    }
+
     timeline.addEventListener("click", (event) => {
       if (event.target.classList.contains("schedule-slot")) return;
+      if (isDateBeforeToday(date)) {
+        setStatus(adminExperimentStatus, "不能选择今天之前的日期", true);
+        return;
+      }
       const rect = timeline.getBoundingClientRect();
       const offsetY = event.clientY - rect.top + timeline.scrollTop;
       const startMin = Math.max(0, Math.round(offsetY / PX_PER_MIN / 10) * 10);
@@ -598,6 +677,7 @@ function toggleAdminSlotSelection(id) {
 }
 
 function enableAdminSlotDrag(slotEl, slot) {
+  if (isDateBeforeToday(new Date(`${slot.date}T00:00:00`))) return;
   let startY = 0;
   let startMin = slot.startMin;
   let endMin = slot.endMin;
@@ -1172,20 +1252,6 @@ adminExperimentsRefresh?.addEventListener("click", async () => {
   await loadAdminExperimentList();
 });
 
-quotaHelpBtn?.addEventListener("click", () => {
-  quotaHelpBubble.classList.toggle("active");
-  quotaHelpBubble.style.display = quotaHelpBubble.classList.contains("active") ? "block" : "none";
-});
-
-quotaHelpBtn?.addEventListener("mouseenter", () => {
-  quotaHelpBubble.style.display = "block";
-});
-
-quotaHelpBtn?.addEventListener("mouseleave", () => {
-  if (!quotaHelpBubble.classList.contains("active")) {
-    quotaHelpBubble.style.display = "none";
-  }
-});
 
 locationSelect?.addEventListener("change", () => {
   const isOnline = locationSelect.value === "在线";
@@ -1222,6 +1288,10 @@ scheduleFill?.addEventListener("click", () => {
   }
   const days = buildWeekDates(scheduleState.weekStart);
   const date = days[scheduleState.activeDayIndex];
+  if (isDateBeforeToday(date)) {
+    setStatus(adminExperimentStatus, "不能选择今天之前的日期", true);
+    return;
+  }
   const dayKey = date.toISOString().slice(0, 10);
   scheduleState.slots = scheduleState.slots.filter((slot) => slot.date !== dayKey);
   let cursor = 9 * 60;
@@ -1369,14 +1439,9 @@ passwordForm?.addEventListener("submit", async (event) => {
       });
       setStatus(passwordStatus, "已更新目标用户密码");
     } else {
-      if (!payload.current_password) {
-        setStatus(passwordStatus, "请输入当前密码", true);
-        return;
-      }
       await apiRequest("/password/update", {
         method: "POST",
         json: {
-          current_password: payload.current_password,
           new_password: payload.new_password,
         },
       });
@@ -1385,6 +1450,19 @@ passwordForm?.addEventListener("submit", async (event) => {
     passwordForm.reset();
   } catch (error) {
     setStatus(passwordStatus, error.message, true);
+  }
+});
+
+contactForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  setStatus(contactStatus, "保存中...");
+  try {
+    const updates = toJsonForm(contactForm);
+    await apiRequest("/profile/update", { method: "POST", json: { updates } });
+    setStatus(contactStatus, "已保存");
+    await loadProfile();
+  } catch (error) {
+    setStatus(contactStatus, error.message, true);
   }
 });
 
@@ -1402,6 +1480,7 @@ adminExperimentForm?.addEventListener("submit", async (event) => {
     const scheduleRequiredValue = payload.schedule_required === "yes";
     const schedulePayload = scheduleRequiredValue ? buildSchedulePayload() : [];
     const requestPayload = {
+      contact_phone: payload.contact_phone,
       name: payload.name,
       type: payload.type,
       location,
