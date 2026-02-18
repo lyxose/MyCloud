@@ -1680,7 +1680,10 @@ async function applyExperiment(exp, slot) {
   }
 }
 
-tabs.forEach((tab) => {
+
+// 只为注册/登录tab绑定切换事件，避免与admin等其他tab冲突
+const authTabs = document.querySelectorAll("#auth .tab");
+authTabs.forEach((tab) => {
   tab.addEventListener("click", () => toggleTab(tab.dataset.tab));
 });
 
