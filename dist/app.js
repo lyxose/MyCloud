@@ -6,6 +6,7 @@ const state = {
   role: null,
   experiments: [],
   adminExperiments: [],
+  adminActiveTab: "new",
 };
 
 const adminEditState = {
@@ -101,6 +102,8 @@ const scheduleNext = document.getElementById("scheduleNext");
 const scheduleFill = document.getElementById("scheduleFill");
 const scheduleRefresh = document.getElementById("scheduleRefresh");
 const scheduleTitle = document.getElementById("scheduleTitle");
+const scheduleUp = document.getElementById("scheduleUp");
+const scheduleDown = document.getElementById("scheduleDown");
 const scheduleRequired = document.getElementById("scheduleRequired");
 const locationSelect = document.getElementById("locationSelect");
 const locationLinkField = document.getElementById("locationLinkField");
@@ -109,6 +112,10 @@ const locationCustomField = document.getElementById("locationCustomField");
 const adminExperimentsSection = document.getElementById("adminExperiments");
 const adminExperimentList = document.getElementById("adminExperimentList");
 const adminExperimentsRefresh = document.getElementById("adminExperimentsRefresh");
+
+const VIEW_START_DEFAULT = 9 * 60;
+const VIEW_END_DEFAULT = 18 * 60;
+const VIEW_STEP_MIN = 60;
 
 function setStatus(el, text, isError = false) {
   el.textContent = text;
@@ -230,6 +237,11 @@ function renderProfile() {
   profileMeta.textContent = `年龄: ${state.profile.age ?? "-"} | 单位: ${state.profile.unit ?? "-"}`;
   populateProfileForm(state.profile);
   applyRoleLayout();
+  if (state.role === "admin" || state.role === "root") {
+    profileSplit?.classList.add("hidden");
+    profilePane?.classList.add("hidden");
+    experimentForm?.classList.add("hidden");
+  }
   if (adminContactPhone && state.profile.alipay_phone) {
     adminContactPhone.value = state.profile.alipay_phone;
   }
@@ -238,15 +250,14 @@ function renderProfile() {
 const PX_PER_MIN = 2;
 let capacityBuffer = "";
 let capacityTimer = null;
-let scheduleSyncing = false;
-let adminScheduleSyncing = false;
 
 const scheduleState = {
   weekStart: startOfWeek(new Date()),
   slots: [],
   selectedIds: new Set(),
   activeDayIndex: 0,
-  scrollTop: 8 * 60 * PX_PER_MIN,
+  viewStartMin: VIEW_START_DEFAULT,
+  viewEndMin: VIEW_END_DEFAULT,
 };
 
 function startOfWeek(date) {
@@ -266,25 +277,7 @@ function isDateBeforeToday(date) {
   return normalized < today;
 }
 
-function syncScheduleScroll(container, currentBody, stateRef, isAdmin) {
-  if (!container) return;
-  if (isAdmin ? adminScheduleSyncing : scheduleSyncing) return;
-  if (isAdmin) adminScheduleSyncing = true;
-  else scheduleSyncing = true;
-
-  const targetTop = currentBody.scrollTop;
-  stateRef.scrollTop = targetTop;
-  const bodies = container.querySelectorAll(".schedule-day-body");
-  bodies.forEach((body) => {
-    if (body === currentBody) return;
-    body.scrollTop = targetTop;
-  });
-
-  if (isAdmin) adminScheduleSyncing = false;
-  else scheduleSyncing = false;
-}
-
-function buildTimeColumn(container, stateRef, isAdmin) {
+function buildTimeColumn(stateRef) {
   const dayEl = document.createElement("div");
   dayEl.className = "schedule-day schedule-time";
   const header = document.createElement("div");
@@ -293,9 +286,6 @@ function buildTimeColumn(container, stateRef, isAdmin) {
 
   const body = document.createElement("div");
   body.className = "schedule-day-body schedule-time-body";
-  body.scrollTop = stateRef.scrollTop || 8 * 60 * PX_PER_MIN;
-  body.addEventListener("scroll", () => syncScheduleScroll(container, body, stateRef, isAdmin));
-
   const timeline = document.createElement("div");
   timeline.className = "schedule-timeline";
   for (let hour = 0; hour <= 24; hour += 1) {
@@ -305,6 +295,8 @@ function buildTimeColumn(container, stateRef, isAdmin) {
     hourLine.textContent = `${String(hour).padStart(2, "0")}:00`;
     timeline.appendChild(hourLine);
   }
+
+  applyViewWindow(body, timeline, stateRef);
 
   body.appendChild(timeline);
   dayEl.appendChild(header);
@@ -324,6 +316,27 @@ function formatLocalDate(date) {
   return `${year}-${month}-${day}`;
 }
 
+function getViewOffsetPx(stateRef) {
+  return stateRef.viewStartMin * PX_PER_MIN;
+}
+
+function applyViewWindow(body, timeline, stateRef) {
+  const windowMin = stateRef.viewEndMin - stateRef.viewStartMin;
+  const height = Math.max(1, windowMin) * PX_PER_MIN;
+  body.style.height = `${height}px`;
+  timeline.style.transform = `translateY(-${getViewOffsetPx(stateRef)}px)`;
+}
+
+function shiftViewWindow(stateRef, deltaMin, renderFn) {
+  const windowMin = stateRef.viewEndMin - stateRef.viewStartMin;
+  let nextStart = stateRef.viewStartMin + deltaMin;
+  if (nextStart < 0) nextStart = 0;
+  if (nextStart + windowMin > 1440) nextStart = 1440 - windowMin;
+  stateRef.viewStartMin = nextStart;
+  stateRef.viewEndMin = nextStart + windowMin;
+  renderFn();
+}
+
 function buildWeekDates(startDate) {
   const days = [];
   for (let i = 0; i < 7; i += 1) {
@@ -336,13 +349,11 @@ function buildWeekDates(startDate) {
 
 function renderScheduleGrid() {
   if (!scheduleGrid) return;
-  const currentBody = scheduleGrid.querySelector(".schedule-day-body");
-  if (currentBody) scheduleState.scrollTop = currentBody.scrollTop;
   scheduleGrid.innerHTML = "";
   const days = buildWeekDates(scheduleState.weekStart);
   scheduleTitle.textContent = `${days[0].getMonth() + 1}/${days[0].getDate()} - ${days[6].getMonth() + 1}/${days[6].getDate()}`;
 
-  scheduleGrid.appendChild(buildTimeColumn(scheduleGrid, scheduleState, false));
+  scheduleGrid.appendChild(buildTimeColumn(scheduleState));
 
   days.forEach((date, index) => {
     const dayEl = document.createElement("div");
@@ -358,8 +369,6 @@ function renderScheduleGrid() {
 
     const body = document.createElement("div");
     body.className = "schedule-day-body";
-    body.scrollTop = scheduleState.scrollTop || 8 * 60 * PX_PER_MIN;
-    body.addEventListener("scroll", () => syncScheduleScroll(scheduleGrid, body, scheduleState, false));
     const timeline = document.createElement("div");
     timeline.className = "schedule-timeline";
     timeline.dataset.date = formatLocalDate(date);
@@ -371,6 +380,8 @@ function renderScheduleGrid() {
       hourLine.textContent = "";
       timeline.appendChild(hourLine);
     }
+
+    applyViewWindow(body, timeline, scheduleState);
 
     const now = new Date();
     if (date.toDateString() === now.toDateString()) {
@@ -401,8 +412,8 @@ function renderScheduleGrid() {
         setStatus(adminExperimentStatus, "不能选择今天之前的日期", true);
         return;
       }
-      const rect = timeline.getBoundingClientRect();
-      const offsetY = event.clientY - rect.top + timeline.scrollTop;
+      const rect = body.getBoundingClientRect();
+      const offsetY = event.clientY - rect.top + getViewOffsetPx(scheduleState);
       const startMin = Math.max(0, Math.round(offsetY / PX_PER_MIN / 10) * 10);
       const durationMin = Number(adminExperimentForm?.elements?.namedItem?.("duration_min")?.value || 0);
       if (!durationMin) {
@@ -453,7 +464,7 @@ function renderScheduleGrid() {
         });
 
         enableSlotDrag(slotEl, slot);
-        enableSlotResize(slotEl, slot, renderScheduleGrid);
+        enableSlotResize(slotEl, slot, renderScheduleGrid, scheduleState);
         timeline.appendChild(slotEl);
       });
 
@@ -551,7 +562,7 @@ function enableSlotDrag(slotEl, slot) {
   });
 }
 
-function enableSlotResize(slotEl, slot, renderFn) {
+function enableSlotResize(slotEl, slot, renderFn, stateRef) {
   if (isDateBeforeToday(new Date(`${slot.date}T00:00:00`))) return;
   const topHandle = slotEl.querySelector(".slot-handle.top");
   const bottomHandle = slotEl.querySelector(".slot-handle.bottom");
@@ -560,10 +571,10 @@ function enableSlotResize(slotEl, slot, renderFn) {
   let resizing = null;
 
   const handleResize = (clientY) => {
-    const timeline = slotEl.parentElement;
-    if (!timeline) return;
-    const rect = timeline.getBoundingClientRect();
-    const offsetY = clientY - rect.top + timeline.scrollTop;
+    const body = slotEl.closest(".schedule-day-body");
+    if (!body) return;
+    const rect = body.getBoundingClientRect();
+    const offsetY = clientY - rect.top + getViewOffsetPx(stateRef);
     const targetMin = Math.max(0, Math.round(offsetY / PX_PER_MIN / 10) * 10);
     const minDuration = 10;
 
@@ -698,14 +709,13 @@ const adminScheduleState = {
   slots: [],
   selectedIds: new Set(),
   activeDayIndex: 0,
-  scrollTop: 8 * 60 * PX_PER_MIN,
+  viewStartMin: VIEW_START_DEFAULT,
+  viewEndMin: VIEW_END_DEFAULT,
 };
 
 function renderAdminEditScheduleGrid() {
   const container = document.getElementById("adminEditScheduleGrid");
   if (!container) return;
-  const currentBody = container.querySelector(".schedule-day-body");
-  if (currentBody) adminScheduleState.scrollTop = currentBody.scrollTop;
   container.innerHTML = "";
   const days = buildWeekDates(adminScheduleState.weekStart);
 
@@ -714,7 +724,7 @@ function renderAdminEditScheduleGrid() {
     title.textContent = `${days[0].getMonth() + 1}/${days[0].getDate()} - ${days[6].getMonth() + 1}/${days[6].getDate()}`;
   }
 
-  container.appendChild(buildTimeColumn(container, adminScheduleState, true));
+  container.appendChild(buildTimeColumn(adminScheduleState));
 
   days.forEach((date, index) => {
     const dayEl = document.createElement("div");
@@ -730,8 +740,6 @@ function renderAdminEditScheduleGrid() {
 
     const body = document.createElement("div");
     body.className = "schedule-day-body";
-    body.scrollTop = adminScheduleState.scrollTop || 8 * 60 * PX_PER_MIN;
-    body.addEventListener("scroll", () => syncScheduleScroll(container, body, adminScheduleState, true));
     const timeline = document.createElement("div");
     timeline.className = "schedule-timeline";
     timeline.dataset.date = formatLocalDate(date);
@@ -743,6 +751,8 @@ function renderAdminEditScheduleGrid() {
       hourLine.textContent = "";
       timeline.appendChild(hourLine);
     }
+
+    applyViewWindow(body, timeline, adminScheduleState);
 
     const now = new Date();
     if (date.toDateString() === now.toDateString()) {
@@ -773,8 +783,8 @@ function renderAdminEditScheduleGrid() {
         setStatus(adminExperimentStatus, "不能选择今天之前的日期", true);
         return;
       }
-      const rect = timeline.getBoundingClientRect();
-      const offsetY = event.clientY - rect.top + timeline.scrollTop;
+      const rect = body.getBoundingClientRect();
+      const offsetY = event.clientY - rect.top + getViewOffsetPx(adminScheduleState);
       const startMin = Math.max(0, Math.round(offsetY / PX_PER_MIN / 10) * 10);
       const durationMin = Number(adminEditState.experiment?.duration_min || 0);
       if (!durationMin) return;
@@ -815,7 +825,7 @@ function renderAdminEditScheduleGrid() {
         });
 
         enableAdminSlotDrag(slotEl, slot);
-        enableSlotResize(slotEl, slot, renderAdminEditScheduleGrid);
+        enableSlotResize(slotEl, slot, renderAdminEditScheduleGrid, adminScheduleState);
         timeline.appendChild(slotEl);
       });
 
@@ -1047,6 +1057,9 @@ async function loadAdminExperiments() {
     const data = await apiRequest("/admin/experiments", { method: "GET" });
     state.adminExperiments = data.experiments || [];
     renderAdminTabs();
+    if (state.adminActiveTab !== "new") {
+      await loadAdminExperimentDetail(state.adminActiveTab);
+    }
   } catch {
     state.adminExperiments = [];
   }
@@ -1056,7 +1069,7 @@ function renderAdminTabs() {
   if (!adminTabs) return;
   adminTabs.innerHTML = "";
   const newTab = document.createElement("button");
-  newTab.className = "tab active";
+  newTab.className = "tab";
   newTab.dataset.adminTab = "new";
   newTab.textContent = "新实验";
   newTab.addEventListener("click", () => selectAdminTab("new"));
@@ -1070,20 +1083,37 @@ function renderAdminTabs() {
     tab.addEventListener("click", () => selectAdminTab(exp.experiment_uid));
     adminTabs.appendChild(tab);
   });
+
+  const validTabs = new Set(["new", ...state.adminExperiments.map((exp) => exp.experiment_uid)]);
+  if (!validTabs.has(state.adminActiveTab)) {
+    state.adminActiveTab = "new";
+  }
+
+  adminTabs.querySelectorAll(".tab").forEach((tab) => {
+    tab.classList.toggle("active", tab.dataset.adminTab === state.adminActiveTab);
+  });
+
+  applyAdminPanelState(state.adminActiveTab);
 }
 
-async function selectAdminTab(tabKey) {
-  const tabs = adminTabs.querySelectorAll(".tab");
-  tabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.adminTab === tabKey));
+function applyAdminPanelState(tabKey) {
   const panel = document.getElementById("adminPanelExperiments");
   if (tabKey === "new") {
     adminPanelNew.classList.add("active");
     panel?.classList.remove("active");
-    adminEditState.experiment = null;
     return;
   }
   adminPanelNew.classList.remove("active");
   panel?.classList.add("active");
+}
+
+async function selectAdminTab(tabKey) {
+  state.adminActiveTab = tabKey;
+  renderAdminTabs();
+  if (tabKey === "new") {
+    adminEditState.experiment = null;
+    return;
+  }
   await loadAdminExperimentDetail(tabKey);
 }
 
@@ -1136,7 +1166,67 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
         <button class="primary" id="saveExperimentRules">保存条件设置</button>
       </div>
       <div class="admin-right">
-        <p class="hint">可在下方排期画板直接拖动、调整或批量填充。</p>
+        <form class="form-grid" id="adminEditInfoForm">
+          <label>
+            实验名称
+            <input value="${experiment.name}" disabled />
+          </label>
+          <label>
+            主试联系方式（手机号）
+            <input name="contact_phone" id="adminEditContactPhone" value="${experiment.contact_phone || ""}" />
+          </label>
+          <label>
+            实验类型
+            <select name="type" id="adminEditType">
+              <option value="">请选择</option>
+              <option value="行为">行为</option>
+              <option value="EEG">EEG</option>
+              <option value="MEG">MEG</option>
+              <option value="MRI">MRI</option>
+              <option value="NIRS">NIRS</option>
+              <option value="眼动">眼动</option>
+              <option value="TSM">TSM</option>
+              <option value="其他">其他</option>
+            </select>
+          </label>
+          <label>
+            地点
+            <select name="location" id="adminEditLocation">
+              <option value="在线">在线</option>
+              <option value="604-2">604-2</option>
+              <option value="604-3">604-3</option>
+              <option value="604-4">604-4</option>
+              <option value="604-5">604-5</option>
+              <option value="其他">其他</option>
+            </select>
+          </label>
+          <label id="adminEditLocationCustomField" class="hidden">
+            自定义地点
+            <input name="location_custom" id="adminEditLocationCustom" />
+          </label>
+          <label id="adminEditLocationLinkField" class="hidden">
+            实验链接
+            <input name="location_link" id="adminEditLocationLink" value="${experiment.location_link || ""}" />
+          </label>
+          <label>
+            内容简介
+            <textarea name="description" rows="3" id="adminEditDescription">${experiment.description || ""}</textarea>
+          </label>
+          <label>
+            特殊说明
+            <textarea name="notes" rows="2" id="adminEditNotes">${experiment.notes || ""}</textarea>
+          </label>
+          <label>
+            预计时长（分钟）
+            <input name="duration_min" type="number" min="1" id="adminEditDuration" value="${experiment.duration_min || ""}" />
+          </label>
+          <label>
+            报酬
+            <input name="reward" id="adminEditReward" value="${experiment.reward || ""}" />
+          </label>
+          <button type="button" class="primary" id="saveExperimentInfo">保存实验信息</button>
+        </form>
+        <button type="button" class="ghost danger hidden" id="deleteExperimentBtn">删除实验</button>
       </div>
     </div>
     <div class="schedule-editor full-width" id="adminEditScheduleEditor">
@@ -1144,9 +1234,10 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
         <button type="button" class="ghost" id="adminEditSchedulePrev">◀</button>
         <div id="adminEditScheduleTitle"></div>
         <button type="button" class="ghost" id="adminEditScheduleNext">▶</button>
-        <button type="button" class="ghost" id="adminEditScheduleLoad">加载排期</button>
+        <button type="button" class="ghost" id="adminEditScheduleUp">▲</button>
+        <button type="button" class="ghost" id="adminEditScheduleDown">▼</button>
         <button type="button" class="ghost" id="adminEditScheduleFill">一键填充</button>
-        <button type="button" class="ghost" id="adminEditScheduleRefresh">刷新</button>
+        <button type="button" class="ghost" id="adminEditScheduleRefresh">刷新排期</button>
         <button type="button" class="primary" id="adminEditScheduleSave">保存排期</button>
       </div>
       <div class="schedule-grid" id="adminEditScheduleGrid"></div>
@@ -1155,26 +1246,66 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
 
   const pauseBtn = panel.querySelector("#pauseExperimentBtn");
   const saveRulesBtn = panel.querySelector("#saveExperimentRules");
+  const saveInfoBtn = panel.querySelector("#saveExperimentInfo");
+  const deleteBtn = panel.querySelector("#deleteExperimentBtn");
   const editConditions = panel.querySelector("#adminEditConditions");
   const editQuota = panel.querySelector("#adminEditQuota");
-  const editScheduleLoad = panel.querySelector("#adminEditScheduleLoad");
   const editScheduleSave = panel.querySelector("#adminEditScheduleSave");
   const editSchedulePrev = panel.querySelector("#adminEditSchedulePrev");
   const editScheduleNext = panel.querySelector("#adminEditScheduleNext");
+  const editScheduleUp = panel.querySelector("#adminEditScheduleUp");
+  const editScheduleDown = panel.querySelector("#adminEditScheduleDown");
   const editScheduleFill = panel.querySelector("#adminEditScheduleFill");
   const editScheduleRefresh = panel.querySelector("#adminEditScheduleRefresh");
+  const editType = panel.querySelector("#adminEditType");
+  const editLocation = panel.querySelector("#adminEditLocation");
+  const editLocationCustom = panel.querySelector("#adminEditLocationCustom");
+  const editLocationCustomField = panel.querySelector("#adminEditLocationCustomField");
+  const editLocationLink = panel.querySelector("#adminEditLocationLink");
+  const editLocationLinkField = panel.querySelector("#adminEditLocationLinkField");
+  const editContactPhone = panel.querySelector("#adminEditContactPhone");
+  const editDescription = panel.querySelector("#adminEditDescription");
+  const editNotes = panel.querySelector("#adminEditNotes");
+  const editDuration = panel.querySelector("#adminEditDuration");
+  const editReward = panel.querySelector("#adminEditReward");
+
+  if (editType) editType.value = experiment.type || "";
+
+  if (editLocation) {
+    const knownLocations = ["在线", "604-2", "604-3", "604-4", "604-5", "其他"];
+    if (knownLocations.includes(experiment.location)) {
+      editLocation.value = experiment.location;
+    } else {
+      editLocation.value = "其他";
+      if (editLocationCustom) editLocationCustom.value = experiment.location || "";
+    }
+  }
+
+  const syncEditLocationFields = () => {
+    if (!editLocation) return;
+    const isOnline = editLocation.value === "在线";
+    const isCustom = editLocation.value === "其他";
+    editLocationLinkField?.classList.toggle("hidden", !isOnline);
+    editLocationCustomField?.classList.toggle("hidden", !isCustom);
+  };
+  syncEditLocationFields();
+  editLocation?.addEventListener("change", syncEditLocationFields);
+
+  if (deleteBtn) {
+    deleteBtn.classList.toggle("hidden", experiment.status !== "paused");
+  }
   pauseBtn.addEventListener("click", async () => {
     try {
       pauseBtn.disabled = true;
       pauseBtn.classList.add("loading");
       pauseBtn.textContent = "处理中...";
+      state.adminActiveTab = experiment.experiment_uid;
       await apiRequest("/admin/experiment/pause", {
         method: "POST",
         json: { experiment_uid: experiment.experiment_uid, paused: experiment.status !== "paused" },
       });
       await loadAdminExperiments();
       await loadAdminExperimentList();
-      await loadAdminExperimentDetail(experiment.experiment_uid);
     } catch (error) {
       setStatus(adminExperimentStatus, error.message, true);
     } finally {
@@ -1202,7 +1333,96 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
     }
   });
 
-  editScheduleLoad.addEventListener("click", () => {
+  const loadScheduleFromSlots = (sourceSlots) => {
+    const editableSlots = sourceSlots
+      .filter((slot) => slot.locked === 0)
+      .map(convertSlotToSchedule)
+      .filter(Boolean);
+    adminScheduleState.slots = editableSlots;
+    adminScheduleState.selectedIds.clear();
+    if (editableSlots.length > 0) {
+      adminScheduleState.weekStart = startOfWeek(new Date(`${editableSlots[0].date}T00:00:00`));
+    }
+    renderAdminEditScheduleGrid();
+  };
+
+  editScheduleRefresh?.addEventListener("click", async () => {
+    await loadAdminExperimentDetail(experiment.experiment_uid);
+  });
+
+  editScheduleUp?.addEventListener("click", () => {
+    shiftViewWindow(adminScheduleState, -VIEW_STEP_MIN, renderAdminEditScheduleGrid);
+  });
+
+  editScheduleDown?.addEventListener("click", () => {
+    shiftViewWindow(adminScheduleState, VIEW_STEP_MIN, renderAdminEditScheduleGrid);
+  });
+
+  editScheduleFill?.addEventListener("click", () => {
+    const durationMin = Number(adminEditState.experiment?.duration_min || 0);
+    if (!durationMin) return;
+    const days = buildWeekDates(adminScheduleState.weekStart);
+    const date = days[adminScheduleState.activeDayIndex];
+    if (isDateBeforeToday(date)) {
+      setStatus(adminExperimentStatus, "不能选择今天之前的日期", true);
+      return;
+    }
+    const dayKey = formatLocalDate(date);
+    adminScheduleState.slots = adminScheduleState.slots.filter((slot) => slot.date !== dayKey);
+    let cursor = 9 * 60;
+    while (cursor + durationMin <= 22 * 60) {
+      addAdminScheduleSlot({ date, startMin: cursor, endMin: cursor + durationMin, capacity: 1 });
+      cursor += durationMin + 20;
+    }
+    renderAdminEditScheduleGrid();
+  });
+
+  loadScheduleFromSlots(slots);
+
+  saveInfoBtn?.addEventListener("click", async () => {
+    try {
+      const locationValue = editLocation?.value === "其他" ? editLocationCustom?.value : editLocation?.value;
+      if (!locationValue) {
+        setStatus(adminExperimentStatus, "请填写实验地点", true);
+        return;
+      }
+      await apiRequest("/admin/experiment/update", {
+        method: "POST",
+        json: {
+          experiment_uid: experiment.experiment_uid,
+          contact_phone: editContactPhone?.value || null,
+          type: editType?.value || null,
+          location: locationValue,
+          location_link: editLocationLink?.value || null,
+          description: editDescription?.value || null,
+          notes: editNotes?.value || null,
+          duration_min: editDuration?.value || null,
+          reward: editReward?.value || null,
+        },
+      });
+      setStatus(adminExperimentStatus, "实验信息已保存");
+      await loadAdminExperiments();
+      await loadAdminExperimentList();
+      await loadAdminExperimentDetail(experiment.experiment_uid);
+    } catch (error) {
+      setStatus(adminExperimentStatus, error.message, true);
+    }
+  });
+
+  deleteBtn?.addEventListener("click", async () => {
+    try {
+      await apiRequest("/admin/experiment/delete", {
+        method: "POST",
+        json: { experiment_uid: experiment.experiment_uid },
+      });
+      state.adminActiveTab = "new";
+      await loadAdminExperiments();
+      await loadAdminExperimentList();
+      selectAdminTab("new");
+    } catch (error) {
+      setStatus(adminExperimentStatus, error.message, true);
+    }
+  });
     const editableSlots = slots
       .filter((slot) => slot.locked === 0)
       .map(convertSlotToSchedule)
@@ -1228,29 +1448,6 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
     const next = new Date(adminScheduleState.weekStart);
     next.setDate(next.getDate() + 7);
     adminScheduleState.weekStart = next;
-    renderAdminEditScheduleGrid();
-  });
-
-  editScheduleFill?.addEventListener("click", () => {
-    const durationMin = Number(adminEditState.experiment?.duration_min || 0);
-    if (!durationMin) return;
-    const days = buildWeekDates(adminScheduleState.weekStart);
-    const date = days[adminScheduleState.activeDayIndex];
-    if (isDateBeforeToday(date)) {
-      setStatus(adminExperimentStatus, "不能选择今天之前的日期", true);
-      return;
-    }
-    const dayKey = formatLocalDate(date);
-    adminScheduleState.slots = adminScheduleState.slots.filter((slot) => slot.date !== dayKey);
-    let cursor = 9 * 60;
-    while (cursor + durationMin <= 22 * 60) {
-      addAdminScheduleSlot({ date, startMin: cursor, endMin: cursor + durationMin, capacity: 1 });
-      cursor += durationMin + 20;
-    }
-    renderAdminEditScheduleGrid();
-  });
-
-  editScheduleRefresh?.addEventListener("click", () => {
     renderAdminEditScheduleGrid();
   });
 
@@ -1436,7 +1633,7 @@ function renderExperimentSlots(exp, slots) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "ghost";
-    btn.textContent = `${formatSlotTime(slot.start_time)} - ${formatSlotTime(slot.end_time)} (${slot.remaining}人)`;
+    btn.textContent = `${formatSlotDateTime(slot.start_time)} - ${formatSlotTime(slot.end_time)} (${slot.remaining}人)`;
     btn.addEventListener("click", () => applyExperiment(exp, slot));
     slotWrap.appendChild(btn);
   });
@@ -1447,6 +1644,15 @@ function formatSlotTime(value) {
   if (!value) return "";
   const date = new Date(value);
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function formatSlotDateTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d} ${formatSlotTime(value)}`;
 }
 
 async function applyExperiment(exp, slot) {
@@ -1536,6 +1742,14 @@ scheduleNext?.addEventListener("click", () => {
   next.setDate(next.getDate() + 7);
   scheduleState.weekStart = next;
   renderScheduleGrid();
+});
+
+scheduleUp?.addEventListener("click", () => {
+  shiftViewWindow(scheduleState, -VIEW_STEP_MIN, renderScheduleGrid);
+});
+
+scheduleDown?.addEventListener("click", () => {
+  shiftViewWindow(scheduleState, VIEW_STEP_MIN, renderScheduleGrid);
 });
 
 scheduleFill?.addEventListener("click", () => {

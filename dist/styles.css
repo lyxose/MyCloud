@@ -272,6 +272,11 @@ textarea:focus {
   color: var(--accent-dark);
 }
 
+.ghost.danger {
+  background: #fde8e8;
+  color: #b42318;
+}
+
 .form-note {
   color: var(--muted);
   font-size: 0.9rem;
@@ -388,9 +393,25 @@ textarea:focus {
 
 .admin-tabs {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.4rem;
   margin-bottom: 1rem;
   flex-wrap: wrap;
+  border-bottom: 1px solid #c9d6ea;
+}
+
+.admin-tabs .tab {
+  border-radius: 12px 12px 0 0;
+  background: #eef4fb;
+  color: var(--muted);
+  border: 1px solid #c9d6ea;
+  border-bottom: none;
+  padding: 0.5rem 1.2rem;
+}
+
+.admin-tabs .tab.active {
+  background: #ffffff;
+  color: var(--text);
+  box-shadow: 0 -2px 0 var(--accent) inset;
 }
 
 .admin-panel {
@@ -487,7 +508,7 @@ textarea:focus {
   left: 0;
   z-index: 2;
   min-width: 72px;
-  background: #ffffff;
+  background: #dde9f8;
   border: 1px solid rgba(58, 123, 213, 0.2);
 }
 
@@ -496,7 +517,7 @@ textarea:focus {
 }
 
 .schedule-time-body {
-  background: #f7faff;
+  background: #d4e2f5;
 }
 
 .schedule-day {
@@ -521,15 +542,9 @@ textarea:focus {
 
 .schedule-day-body {
   position: relative;
-  height: 520px;
-  overflow-y: auto;
+  height: auto;
+  overflow: hidden;
   background: linear-gradient(180deg, rgba(58, 123, 213, 0.05) 0%, rgba(58, 123, 213, 0) 40%);
-  scrollbar-width: none;
-}
-
-.schedule-day-body::-webkit-scrollbar {
-  width: 0;
-  height: 0;
 }
 
 .schedule-timeline {
@@ -543,9 +558,9 @@ textarea:focus {
   right: 0;
   height: 60px;
   border-top: 1px dashed rgba(58, 123, 213, 0.15);
-  font-size: 0.7rem;
-  color: #8aa0b9;
-  padding-left: 0.4rem;
+  font-size: 0.85rem;
+  color: #3a4f6b;
+  text-align: center;
 }
 
 .schedule-slot {
