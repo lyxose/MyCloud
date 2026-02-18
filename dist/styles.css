@@ -492,8 +492,9 @@ textarea:focus {
 
 .schedule-grid {
   display: grid;
-  grid-template-columns: 72px repeat(7, minmax(160px, 1fr));
-  gap: 0.6rem;
+  grid-template-columns: 56px repeat(7, minmax(150px, 1fr));
+  column-gap: 0.4rem;
+  row-gap: 0.6rem;
   overflow-x: auto;
   overflow-y: hidden;
   position: relative;
@@ -507,8 +508,8 @@ textarea:focus {
   position: sticky;
   left: 0;
   z-index: 2;
-  min-width: 72px;
-  background: #dde9f8;
+  min-width: 56px;
+  background: #d6e3f5;
   border: 1px solid rgba(58, 123, 213, 0.2);
 }
 
@@ -517,7 +518,7 @@ textarea:focus {
 }
 
 .schedule-time-body {
-  background: #d4e2f5;
+  background: #cddcf2;
 }
 
 .schedule-day {
