@@ -66,9 +66,11 @@ const profileUid = document.getElementById("profileUid");
 const profileMeta = document.getElementById("profileMeta");
 
 const profileCard = document.getElementById("profile");
+const authCard = document.getElementById("auth");
 const consentSection = document.getElementById("consent");
 const profilePane = document.getElementById("profilePane");
 const profileToggle = document.getElementById("profileToggle");
+const profileSplit = document.querySelector(".split");
 
 const unitInput = document.getElementById("unitInput");
 const unitSuggestions = document.getElementById("unitSuggestions");
@@ -157,6 +159,7 @@ function applyRoleLayout() {
   const isAdmin = state.role === "admin" || state.role === "root";
   profilePane?.classList.toggle("hidden", isAdmin);
   experimentForm?.classList.toggle("hidden", isAdmin);
+  profileSplit?.classList.toggle("hidden", isAdmin);
   adminArea?.classList.toggle("hidden", !isAdmin);
   adminExperimentsSection?.classList.toggle("hidden", !isAdmin);
   consentSection?.classList.toggle("hidden", isAdmin);
@@ -198,7 +201,6 @@ function populateProfileForm(profile) {
   const contactMapping = {
     alipay_phone: profile.alipay_phone,
     wechat: profile.wechat,
-    unit: profile.unit,
   };
   Object.entries(contactMapping).forEach(([key, value]) => {
     const field = contactForm?.elements?.namedItem?.(key);
@@ -215,12 +217,14 @@ function renderProfile() {
     adminArea?.classList.add("hidden");
     adminExperimentsSection?.classList.add("hidden");
     consentSection?.classList.remove("hidden");
+    authCard?.classList.remove("hidden");
     return;
   }
 
   profileCard.classList.remove("hidden");
   profileEmpty.classList.add("hidden");
   profileArea.classList.remove("hidden");
+  authCard?.classList.add("hidden");
   profileName.textContent = state.profile.name || "";
   profileUid.textContent = `系统内ID: ${state.profile.user_uid}`;
   profileMeta.textContent = `年龄: ${state.profile.age ?? "-"} | 单位: ${state.profile.unit ?? "-"}`;
@@ -231,19 +235,19 @@ function renderProfile() {
   }
 }
 
-const scheduleState = {
-  weekStart: startOfWeek(new Date()),
-  slots: [],
-  selectedIds: new Set(),
-  activeDayIndex: 0,
-  scrollTop: 960,
-};
-
 const PX_PER_MIN = 2;
 let capacityBuffer = "";
 let capacityTimer = null;
 let scheduleSyncing = false;
 let adminScheduleSyncing = false;
+
+const scheduleState = {
+  weekStart: startOfWeek(new Date()),
+  slots: [],
+  selectedIds: new Set(),
+  activeDayIndex: 0,
+  scrollTop: 8 * 60 * PX_PER_MIN,
+};
 
 function startOfWeek(date) {
   const d = new Date(date);
@@ -280,9 +284,44 @@ function syncScheduleScroll(container, currentBody, stateRef, isAdmin) {
   else scheduleSyncing = false;
 }
 
+function buildTimeColumn(container, stateRef, isAdmin) {
+  const dayEl = document.createElement("div");
+  dayEl.className = "schedule-day schedule-time";
+  const header = document.createElement("div");
+  header.className = "schedule-day-header";
+  header.textContent = "时间";
+
+  const body = document.createElement("div");
+  body.className = "schedule-day-body schedule-time-body";
+  body.scrollTop = stateRef.scrollTop || 8 * 60 * PX_PER_MIN;
+  body.addEventListener("scroll", () => syncScheduleScroll(container, body, stateRef, isAdmin));
+
+  const timeline = document.createElement("div");
+  timeline.className = "schedule-timeline";
+  for (let hour = 0; hour <= 24; hour += 1) {
+    const hourLine = document.createElement("div");
+    hourLine.className = "schedule-hour";
+    hourLine.style.top = `${hour * 60 * PX_PER_MIN}px`;
+    hourLine.textContent = `${String(hour).padStart(2, "0")}:00`;
+    timeline.appendChild(hourLine);
+  }
+
+  body.appendChild(timeline);
+  dayEl.appendChild(header);
+  dayEl.appendChild(body);
+  return dayEl;
+}
+
 function formatDateLabel(date) {
   const week = ["日", "一", "二", "三", "四", "五", "六"];
   return `${date.getMonth() + 1}/${date.getDate()} 周${week[date.getDay()]}`;
+}
+
+function formatLocalDate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function buildWeekDates(startDate) {
@@ -297,9 +336,13 @@ function buildWeekDates(startDate) {
 
 function renderScheduleGrid() {
   if (!scheduleGrid) return;
+  const currentBody = scheduleGrid.querySelector(".schedule-day-body");
+  if (currentBody) scheduleState.scrollTop = currentBody.scrollTop;
   scheduleGrid.innerHTML = "";
   const days = buildWeekDates(scheduleState.weekStart);
   scheduleTitle.textContent = `${days[0].getMonth() + 1}/${days[0].getDate()} - ${days[6].getMonth() + 1}/${days[6].getDate()}`;
+
+  scheduleGrid.appendChild(buildTimeColumn(scheduleGrid, scheduleState, false));
 
   days.forEach((date, index) => {
     const dayEl = document.createElement("div");
@@ -319,13 +362,13 @@ function renderScheduleGrid() {
     body.addEventListener("scroll", () => syncScheduleScroll(scheduleGrid, body, scheduleState, false));
     const timeline = document.createElement("div");
     timeline.className = "schedule-timeline";
-    timeline.dataset.date = date.toISOString().slice(0, 10);
+    timeline.dataset.date = formatLocalDate(date);
 
     for (let hour = 0; hour <= 24; hour += 1) {
       const hourLine = document.createElement("div");
       hourLine.className = "schedule-hour";
       hourLine.style.top = `${hour * 60 * PX_PER_MIN}px`;
-      hourLine.textContent = `${String(hour).padStart(2, "0")}:00`;
+      hourLine.textContent = "";
       timeline.appendChild(hourLine);
     }
 
@@ -379,7 +422,7 @@ function renderScheduleGrid() {
     });
 
     scheduleState.slots
-      .filter((slot) => slot.date === date.toISOString().slice(0, 10))
+      .filter((slot) => slot.date === formatLocalDate(date))
       .forEach((slot) => {
         const slotEl = document.createElement("div");
         slotEl.className = "schedule-slot";
@@ -391,10 +434,12 @@ function renderScheduleGrid() {
         slotEl.dataset.id = slot.id;
         slotEl.innerHTML = `
           <div class="slot-time">
-            <span>${formatMinutes(slot.startMin)}</span>
-            <span>${formatMinutes(slot.endMin)}</span>
+            <span class="slot-time-start">${formatMinutes(slot.startMin)}</span>
+            <span class="slot-time-end">${formatMinutes(slot.endMin)}</span>
           </div>
           <div class="slot-count">${slot.capacity}人</div>
+          <div class="slot-handle top">▲</div>
+          <div class="slot-handle bottom">▼</div>
         `;
 
         slotEl.addEventListener("click", (event) => {
@@ -408,6 +453,7 @@ function renderScheduleGrid() {
         });
 
         enableSlotDrag(slotEl, slot);
+        enableSlotResize(slotEl, slot, renderScheduleGrid);
         timeline.appendChild(slotEl);
       });
 
@@ -421,7 +467,7 @@ function renderScheduleGrid() {
 function addScheduleSlot({ date, startMin, endMin, capacity }) {
   scheduleState.slots.push({
     id: `slot_${Date.now()}_${Math.random().toString(16).slice(2)}`,
-    date: date.toISOString().slice(0, 10),
+    date: formatLocalDate(date),
     startMin,
     endMin,
     capacity: capacity || 1,
@@ -455,9 +501,9 @@ function enableSlotDrag(slotEl, slot) {
     const step = Math.round(delta / (PX_PER_MIN * 10)) * 10;
     const duration = endMin - startMin;
     let nextStart = Math.max(0, Math.min(1440 - duration, startMin + step));
-    if (slot.date === new Date().toISOString().slice(0, 10)) {
+    if (slot.date === formatLocalDate(new Date())) {
       const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
-      if (nextStart < nowMin) nextStart = nowMin;
+      if (startMin >= nowMin && nextStart < nowMin) nextStart = nowMin;
     }
     let nextEnd = nextStart + duration;
     slot.startMin = nextStart;
@@ -480,6 +526,101 @@ function enableSlotDrag(slotEl, slot) {
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
   });
+
+  let pressTimer = null;
+  slotEl.addEventListener("touchstart", (event) => {
+    if (event.touches.length !== 1) return;
+    pressTimer = setTimeout(() => {
+      dragging = true;
+      startY = event.touches[0].clientY;
+      startMin = slot.startMin;
+      endMin = slot.endMin;
+    }, 350);
+  });
+
+  slotEl.addEventListener("touchmove", (event) => {
+    if (!dragging) return;
+    const fakeEvent = { clientY: event.touches[0].clientY };
+    onMove(fakeEvent);
+    event.preventDefault();
+  }, { passive: false });
+
+  slotEl.addEventListener("touchend", () => {
+    if (pressTimer) clearTimeout(pressTimer);
+    if (dragging) onUp();
+  });
+}
+
+function enableSlotResize(slotEl, slot, renderFn) {
+  if (isDateBeforeToday(new Date(`${slot.date}T00:00:00`))) return;
+  const topHandle = slotEl.querySelector(".slot-handle.top");
+  const bottomHandle = slotEl.querySelector(".slot-handle.bottom");
+  if (!topHandle || !bottomHandle) return;
+
+  let resizing = null;
+
+  const handleResize = (clientY) => {
+    const timeline = slotEl.parentElement;
+    if (!timeline) return;
+    const rect = timeline.getBoundingClientRect();
+    const offsetY = clientY - rect.top + timeline.scrollTop;
+    const targetMin = Math.max(0, Math.round(offsetY / PX_PER_MIN / 10) * 10);
+    const minDuration = 10;
+
+    if (resizing === "top") {
+      let nextStart = Math.min(slot.endMin - minDuration, targetMin);
+      if (slot.date === formatLocalDate(new Date())) {
+        const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+        if (nextStart < nowMin) nextStart = nowMin;
+      }
+      slot.startMin = Math.max(0, nextStart);
+    }
+
+    if (resizing === "bottom") {
+      let nextEnd = Math.max(slot.startMin + minDuration, targetMin);
+      slot.endMin = Math.min(1440, nextEnd);
+    }
+
+    renderFn();
+  };
+
+  const onMove = (event) => {
+    if (!resizing) return;
+    handleResize(event.clientY);
+  };
+
+  const onUp = () => {
+    resizing = null;
+    document.removeEventListener("mousemove", onMove);
+    document.removeEventListener("mouseup", onUp);
+  };
+
+  const bindHandle = (handle, edge) => {
+    handle.addEventListener("mousedown", (event) => {
+      event.stopPropagation();
+      resizing = edge;
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    });
+
+    handle.addEventListener("touchstart", (event) => {
+      event.stopPropagation();
+      resizing = edge;
+    });
+
+    handle.addEventListener("touchmove", (event) => {
+      if (!resizing) return;
+      handleResize(event.touches[0].clientY);
+      event.preventDefault();
+    }, { passive: false });
+
+    handle.addEventListener("touchend", () => {
+      resizing = null;
+    });
+  };
+
+  bindHandle(topHandle, "top");
+  bindHandle(bottomHandle, "bottom");
 }
 
 function shiftSelectedSlots(minuteDelta) {
@@ -557,14 +698,23 @@ const adminScheduleState = {
   slots: [],
   selectedIds: new Set(),
   activeDayIndex: 0,
-  scrollTop: 960,
+  scrollTop: 8 * 60 * PX_PER_MIN,
 };
 
 function renderAdminEditScheduleGrid() {
   const container = document.getElementById("adminEditScheduleGrid");
   if (!container) return;
+  const currentBody = container.querySelector(".schedule-day-body");
+  if (currentBody) adminScheduleState.scrollTop = currentBody.scrollTop;
   container.innerHTML = "";
   const days = buildWeekDates(adminScheduleState.weekStart);
+
+  const title = document.getElementById("adminEditScheduleTitle");
+  if (title && days.length) {
+    title.textContent = `${days[0].getMonth() + 1}/${days[0].getDate()} - ${days[6].getMonth() + 1}/${days[6].getDate()}`;
+  }
+
+  container.appendChild(buildTimeColumn(container, adminScheduleState, true));
 
   days.forEach((date, index) => {
     const dayEl = document.createElement("div");
@@ -584,14 +734,29 @@ function renderAdminEditScheduleGrid() {
     body.addEventListener("scroll", () => syncScheduleScroll(container, body, adminScheduleState, true));
     const timeline = document.createElement("div");
     timeline.className = "schedule-timeline";
-    timeline.dataset.date = date.toISOString().slice(0, 10);
+    timeline.dataset.date = formatLocalDate(date);
 
     for (let hour = 0; hour <= 24; hour += 1) {
       const hourLine = document.createElement("div");
       hourLine.className = "schedule-hour";
       hourLine.style.top = `${hour * 60 * PX_PER_MIN}px`;
-      hourLine.textContent = `${String(hour).padStart(2, "0")}:00`;
+      hourLine.textContent = "";
       timeline.appendChild(hourLine);
+    }
+
+    const now = new Date();
+    if (date.toDateString() === now.toDateString()) {
+      const minutes = now.getHours() * 60 + now.getMinutes();
+      const nowLine = document.createElement("div");
+      nowLine.className = "schedule-now";
+      nowLine.style.top = `${minutes * PX_PER_MIN}px`;
+      timeline.appendChild(nowLine);
+
+      const past = document.createElement("div");
+      past.className = "schedule-past";
+      past.style.top = "0px";
+      past.style.height = `${minutes * PX_PER_MIN}px`;
+      timeline.appendChild(past);
     }
 
     if (isDateBeforeToday(date)) {
@@ -619,7 +784,7 @@ function renderAdminEditScheduleGrid() {
     });
 
     adminScheduleState.slots
-      .filter((slot) => slot.date === date.toISOString().slice(0, 10))
+      .filter((slot) => slot.date === formatLocalDate(date))
       .forEach((slot) => {
         const slotEl = document.createElement("div");
         slotEl.className = "schedule-slot";
@@ -631,10 +796,12 @@ function renderAdminEditScheduleGrid() {
         slotEl.dataset.id = slot.id;
         slotEl.innerHTML = `
           <div class="slot-time">
-            <span>${formatMinutes(slot.startMin)}</span>
-            <span>${formatMinutes(slot.endMin)}</span>
+            <span class="slot-time-start">${formatMinutes(slot.startMin)}</span>
+            <span class="slot-time-end">${formatMinutes(slot.endMin)}</span>
           </div>
           <div class="slot-count">${slot.capacity}人</div>
+          <div class="slot-handle top">▲</div>
+          <div class="slot-handle bottom">▼</div>
         `;
 
         slotEl.addEventListener("click", (event) => {
@@ -648,6 +815,7 @@ function renderAdminEditScheduleGrid() {
         });
 
         enableAdminSlotDrag(slotEl, slot);
+        enableSlotResize(slotEl, slot, renderAdminEditScheduleGrid);
         timeline.appendChild(slotEl);
       });
 
@@ -661,7 +829,7 @@ function renderAdminEditScheduleGrid() {
 function addAdminScheduleSlot({ date, startMin, endMin, capacity }) {
   adminScheduleState.slots.push({
     id: `slot_${Date.now()}_${Math.random().toString(16).slice(2)}`,
-    date: date.toISOString().slice(0, 10),
+    date: formatLocalDate(date),
     startMin,
     endMin,
     capacity: capacity || 1,
@@ -689,6 +857,10 @@ function enableAdminSlotDrag(slotEl, slot) {
     const step = Math.round(delta / (PX_PER_MIN * 10)) * 10;
     const duration = endMin - startMin;
     let nextStart = Math.max(0, Math.min(1440 - duration, startMin + step));
+    if (slot.date === formatLocalDate(new Date())) {
+      const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+      if (startMin >= nowMin && nextStart < nowMin) nextStart = nowMin;
+    }
     slot.startMin = nextStart;
     slot.endMin = nextStart + duration;
     renderAdminEditScheduleGrid();
@@ -708,6 +880,29 @@ function enableAdminSlotDrag(slotEl, slot) {
     endMin = slot.endMin;
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
+  });
+
+  let pressTimer = null;
+  slotEl.addEventListener("touchstart", (event) => {
+    if (event.touches.length !== 1) return;
+    pressTimer = setTimeout(() => {
+      dragging = true;
+      startY = event.touches[0].clientY;
+      startMin = slot.startMin;
+      endMin = slot.endMin;
+    }, 350);
+  });
+
+  slotEl.addEventListener("touchmove", (event) => {
+    if (!dragging) return;
+    const fakeEvent = { clientY: event.touches[0].clientY };
+    onMove(fakeEvent);
+    event.preventDefault();
+  }, { passive: false });
+
+  slotEl.addEventListener("touchend", () => {
+    if (pressTimer) clearTimeout(pressTimer);
+    if (dragging) onUp();
   });
 }
 
@@ -729,7 +924,7 @@ function convertSlotToSchedule(slot) {
   const end = new Date(slot.end_time);
   return {
     id: `existing_${slot.id}`,
-    date: slot.start_time.slice(0, 10),
+    date: formatLocalDate(start),
     startMin: start.getHours() * 60 + start.getMinutes(),
     endMin: end.getHours() * 60 + end.getMinutes(),
     capacity: slot.capacity || 1,
@@ -909,6 +1104,10 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
   panel.classList.add("active");
   adminEditState.experiment = experiment;
   adminEditState.slots = slots;
+  adminScheduleState.weekStart = startOfWeek(new Date());
+  adminScheduleState.activeDayIndex = 0;
+  adminScheduleState.slots = [];
+  adminScheduleState.selectedIds.clear();
   panel.innerHTML = `
     <div class="admin-layout">
       <div class="admin-left">
@@ -923,24 +1122,34 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
           名额分配
           <textarea id="adminEditQuota" rows="4">${experiment.quotas_text || ""}</textarea>
         </label>
+        <div class="info-card">
+          <strong>设置说明（入组条件 + 名额分配）</strong>
+          <p>1) 入组条件写法：字段 + 比较符号 + 值；使用 <span class="mono">&</span> 表示同时满足，<span class="mono">|</span> 表示二选一，括号用于分组。</p>
+          <p>可用字段：<span class="mono">年龄</span>、<span class="mono">所在地区</span>、<span class="mono">左/右利手</span>、<span class="mono">左眼近视度数</span>、<span class="mono">右眼近视度数</span>、<span class="mono">民族</span>、<span class="mono">受教育年限</span>、<span class="mono">身高</span>、<span class="mono">体重</span>、<span class="mono">头围</span>。</p>
+          <p>示例：<span class="mono">年龄>=18 & 年龄<30 & (左眼近视度数<600|右眼近视度数<600)</span></p>
+          <p>2) 名额分配写法：每行是一组配额；同一行内用 <span class="mono">&</span> 连接多个条件；<span class="mono">条件*人数</span>；使用 <span class="mono">ALL*20</span> 表示不限条件。</p>
+          <p>区间写法：<span class="mono">年龄[18,30)</span> 表示 $18\le \text{年龄}<30$；<span class="mono">[</span> 与 <span class="mono">]</span> 表示包含，<span class="mono">(</span> 与 <span class="mono">)</span> 表示不包含。</p>
+          <p>示例：<span class="mono">性别=男*10 & =女*10</span></p>
+          <p>示例：<span class="mono">年龄[18,30)*20 & >30*0 & [0,18)*0</span></p>
+          <p class="hint">注意：入组条件与名额分配需同时满足，条件之间不可冲突。</p>
+        </div>
         <button class="primary" id="saveExperimentRules">保存条件设置</button>
       </div>
       <div class="admin-right">
-        <div class="schedule-editor">
-          <div class="schedule-header">
-            <span>排期预览</span>
-          </div>
-          <div class="schedule-grid" id="adminSchedulePreview"></div>
-        </div>
-        <div class="schedule-editor" id="adminScheduleEditor">
-          <div class="schedule-header">
-            <span>编辑排期</span>
-            <button class="ghost" id="adminEditScheduleLoad">加载排期</button>
-            <button class="ghost" id="adminEditScheduleSave">保存排期</button>
-          </div>
-          <div class="schedule-grid" id="adminEditScheduleGrid"></div>
-        </div>
+        <p class="hint">可在下方排期画板直接拖动、调整或批量填充。</p>
       </div>
+    </div>
+    <div class="schedule-editor full-width" id="adminEditScheduleEditor">
+      <div class="schedule-header">
+        <button type="button" class="ghost" id="adminEditSchedulePrev">◀</button>
+        <div id="adminEditScheduleTitle"></div>
+        <button type="button" class="ghost" id="adminEditScheduleNext">▶</button>
+        <button type="button" class="ghost" id="adminEditScheduleLoad">加载排期</button>
+        <button type="button" class="ghost" id="adminEditScheduleFill">一键填充</button>
+        <button type="button" class="ghost" id="adminEditScheduleRefresh">刷新</button>
+        <button type="button" class="primary" id="adminEditScheduleSave">保存排期</button>
+      </div>
+      <div class="schedule-grid" id="adminEditScheduleGrid"></div>
     </div>
   `;
 
@@ -950,16 +1159,27 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
   const editQuota = panel.querySelector("#adminEditQuota");
   const editScheduleLoad = panel.querySelector("#adminEditScheduleLoad");
   const editScheduleSave = panel.querySelector("#adminEditScheduleSave");
+  const editSchedulePrev = panel.querySelector("#adminEditSchedulePrev");
+  const editScheduleNext = panel.querySelector("#adminEditScheduleNext");
+  const editScheduleFill = panel.querySelector("#adminEditScheduleFill");
+  const editScheduleRefresh = panel.querySelector("#adminEditScheduleRefresh");
   pauseBtn.addEventListener("click", async () => {
     try {
+      pauseBtn.disabled = true;
+      pauseBtn.classList.add("loading");
+      pauseBtn.textContent = "处理中...";
       await apiRequest("/admin/experiment/pause", {
         method: "POST",
         json: { experiment_uid: experiment.experiment_uid, paused: experiment.status !== "paused" },
       });
       await loadAdminExperiments();
       await loadAdminExperimentList();
+      await loadAdminExperimentDetail(experiment.experiment_uid);
     } catch (error) {
       setStatus(adminExperimentStatus, error.message, true);
+    } finally {
+      pauseBtn.disabled = false;
+      pauseBtn.classList.remove("loading");
     }
   });
 
@@ -995,6 +1215,45 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
     renderAdminEditScheduleGrid();
   });
 
+  editSchedulePrev?.addEventListener("click", () => {
+    const todayStart = startOfWeek(new Date());
+    const next = new Date(adminScheduleState.weekStart);
+    next.setDate(next.getDate() - 7);
+    if (next < todayStart) return;
+    adminScheduleState.weekStart = next;
+    renderAdminEditScheduleGrid();
+  });
+
+  editScheduleNext?.addEventListener("click", () => {
+    const next = new Date(adminScheduleState.weekStart);
+    next.setDate(next.getDate() + 7);
+    adminScheduleState.weekStart = next;
+    renderAdminEditScheduleGrid();
+  });
+
+  editScheduleFill?.addEventListener("click", () => {
+    const durationMin = Number(adminEditState.experiment?.duration_min || 0);
+    if (!durationMin) return;
+    const days = buildWeekDates(adminScheduleState.weekStart);
+    const date = days[adminScheduleState.activeDayIndex];
+    if (isDateBeforeToday(date)) {
+      setStatus(adminExperimentStatus, "不能选择今天之前的日期", true);
+      return;
+    }
+    const dayKey = formatLocalDate(date);
+    adminScheduleState.slots = adminScheduleState.slots.filter((slot) => slot.date !== dayKey);
+    let cursor = 9 * 60;
+    while (cursor + durationMin <= 22 * 60) {
+      addAdminScheduleSlot({ date, startMin: cursor, endMin: cursor + durationMin, capacity: 1 });
+      cursor += durationMin + 20;
+    }
+    renderAdminEditScheduleGrid();
+  });
+
+  editScheduleRefresh?.addEventListener("click", () => {
+    renderAdminEditScheduleGrid();
+  });
+
   editScheduleSave.addEventListener("click", async () => {
     try {
       await apiRequest("/admin/experiment/update", {
@@ -1011,7 +1270,6 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
     }
   });
 
-  renderAdminSchedulePreview(slots, participants, panel.querySelector("#adminSchedulePreview"));
   renderAdminEditScheduleGrid();
 }
 
@@ -1292,7 +1550,7 @@ scheduleFill?.addEventListener("click", () => {
     setStatus(adminExperimentStatus, "不能选择今天之前的日期", true);
     return;
   }
-  const dayKey = date.toISOString().slice(0, 10);
+  const dayKey = formatLocalDate(date);
   scheduleState.slots = scheduleState.slots.filter((slot) => slot.date !== dayKey);
   let cursor = 9 * 60;
   while (cursor + durationMin <= 22 * 60) {

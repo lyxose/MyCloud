@@ -229,6 +229,39 @@ textarea:focus {
   font-weight: 600;
 }
 
+.ghost.loading,
+.primary.loading {
+  position: relative;
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.ghost.loading::after,
+.primary.loading::after {
+  content: "";
+  position: absolute;
+  right: 0.8rem;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin-top: -7px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  border-top-color: rgba(255, 255, 255, 0.15);
+  animation: spin 0.9s linear infinite;
+}
+
+.ghost.loading::after {
+  border-color: rgba(36, 90, 164, 0.4);
+  border-top-color: rgba(36, 90, 164, 0.12);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .primary {
   background: var(--accent);
   color: white;
@@ -383,6 +416,10 @@ textarea:focus {
   height: 100%;
 }
 
+.admin-left .info-card {
+  flex: 1;
+}
+
 .info-trigger {
   align-self: flex-start;
 }
@@ -434,10 +471,32 @@ textarea:focus {
 
 .schedule-grid {
   display: grid;
-  grid-template-columns: repeat(7, minmax(160px, 1fr));
+  grid-template-columns: 72px repeat(7, minmax(160px, 1fr));
   gap: 0.6rem;
   overflow-x: auto;
   overflow-y: hidden;
+  position: relative;
+}
+
+.schedule-grid.no-time {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.schedule-time {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 72px;
+  background: #ffffff;
+  border: 1px solid rgba(58, 123, 213, 0.2);
+}
+
+.schedule-time .schedule-day-header {
+  text-align: center;
+}
+
+.schedule-time-body {
+  background: #f7faff;
 }
 
 .schedule-day {
@@ -465,6 +524,12 @@ textarea:focus {
   height: 520px;
   overflow-y: auto;
   background: linear-gradient(180deg, rgba(58, 123, 213, 0.05) 0%, rgba(58, 123, 213, 0) 40%);
+  scrollbar-width: none;
+}
+
+.schedule-day-body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .schedule-timeline {
@@ -504,15 +569,58 @@ textarea:focus {
 }
 
 .schedule-slot .slot-time {
-  display: flex;
-  justify-content: space-between;
+  position: absolute;
+  inset: 0.3rem 0.4rem;
   font-size: 0.68rem;
+  pointer-events: none;
+}
+
+.schedule-slot .slot-time-start {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.schedule-slot .slot-time-end {
+  position: absolute;
+  bottom: 0;
+  right: 0;
 }
 
 .schedule-slot .slot-count {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
   text-align: center;
   font-weight: 600;
   font-size: 0.85rem;
+}
+
+.schedule-slot .slot-handle {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.7rem;
+  color: #245aa4;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  cursor: ns-resize;
+  user-select: none;
+}
+
+.schedule-slot .slot-handle.top {
+  top: 2px;
+}
+
+.schedule-slot .slot-handle.bottom {
+  bottom: 2px;
+}
+
+.schedule-slot:hover .slot-handle,
+.schedule-slot:focus-within .slot-handle {
+  opacity: 1;
 }
 
 .schedule-now {
