@@ -121,7 +121,7 @@ const adminExperimentsRefresh = document.getElementById("adminExperimentsRefresh
 
 const VIEW_START_DEFAULT = 9 * 60;
 const VIEW_END_DEFAULT = 18 * 60;
-const VIEW_STEP_MIN = 60;
+const VIEW_STEP_MIN = 180;
 const IS_COARSE_POINTER = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
 
 function setStatus(el, text, isError = false) {
@@ -270,6 +270,7 @@ const scheduleState = {
   activeDayIndex: 0,
   dayCount: 7,
   autoStart: true,
+  layoutRetry: false,
   viewStartMin: VIEW_START_DEFAULT,
   viewEndMin: VIEW_END_DEFAULT,
 };
@@ -376,9 +377,10 @@ function getDayColumnCount(gridEl) {
   if (!gridEl) return 7;
   const rootStyles = getComputedStyle(document.documentElement);
   const timeWidth = Number(rootStyles.getPropertyValue("--time-col-width").replace("px", "")) || 32;
+  const gap = 6;
   const available = Math.max(0, gridEl.clientWidth - timeWidth - 12);
-  const minDayWidth = 140;
-  const count = Math.floor(available / minDayWidth);
+  const minDayWidth = 92;
+  const count = Math.floor((available + gap) / (minDayWidth + gap));
   return Math.max(1, Math.min(7, count || 1));
 }
 
@@ -386,12 +388,55 @@ function getDayStep(count) {
   return Math.max(1, Math.ceil(count / 2));
 }
 
+let scheduleResizeObserver = null;
+let adminScheduleResizeObserver = null;
+
+function attachScheduleResizeObserver() {
+  if (!scheduleGrid || scheduleResizeObserver) return;
+  scheduleResizeObserver = new ResizeObserver(() => {
+    const nextCount = getDayColumnCount(scheduleGrid);
+    if (nextCount === scheduleState.dayCount) return;
+    scheduleState.dayCount = nextCount;
+    if (scheduleState.autoStart) {
+      scheduleState.weekStart = normalizeStartDate(new Date(), nextCount);
+    }
+    if (scheduleState.activeDayIndex >= nextCount) scheduleState.activeDayIndex = 0;
+    renderScheduleGrid();
+  });
+  scheduleResizeObserver.observe(scheduleGrid);
+}
+
+function attachAdminScheduleResizeObserver(container) {
+  if (!container || adminScheduleResizeObserver) return;
+  adminScheduleResizeObserver = new ResizeObserver(() => {
+    const nextCount = getDayColumnCount(container);
+    if (nextCount === adminScheduleState.dayCount) return;
+    adminScheduleState.dayCount = nextCount;
+    if (adminScheduleState.autoStart) {
+      adminScheduleState.weekStart = normalizeStartDate(new Date(), nextCount);
+    }
+    if (adminScheduleState.activeDayIndex >= nextCount) adminScheduleState.activeDayIndex = 0;
+    renderAdminEditScheduleGrid();
+  });
+  adminScheduleResizeObserver.observe(container);
+}
+
 function renderScheduleGrid() {
   if (!scheduleGrid) return;
   const prevDays = scheduleGrid.querySelector(".schedule-days");
   if (prevDays) scheduleScrollState.schedule = prevDays.scrollLeft;
   scheduleGrid.innerHTML = "";
-  const dayCount = getDayColumnCount(scheduleGrid);
+  let dayCount = getDayColumnCount(scheduleGrid);
+  if (scheduleGrid.clientWidth < 200) {
+    dayCount = scheduleState.dayCount || dayCount;
+    if (!scheduleState.layoutRetry) {
+      scheduleState.layoutRetry = true;
+      requestAnimationFrame(() => {
+        scheduleState.layoutRetry = false;
+        renderScheduleGrid();
+      });
+    }
+  }
   if (scheduleState.dayCount !== dayCount) {
     scheduleState.dayCount = dayCount;
     if (scheduleState.autoStart) {
@@ -406,7 +451,7 @@ function renderScheduleGrid() {
   const daysContainer = document.createElement("div");
   daysContainer.className = "schedule-days";
   daysContainer.style.setProperty("--day-count", String(dayCount));
-  daysContainer.style.gridTemplateColumns = `repeat(${dayCount}, minmax(100px, 1fr))`;
+  daysContainer.style.gridTemplateColumns = `repeat(${dayCount}, minmax(92px, 1fr))`;
 
   scheduleGrid.appendChild(timeColumn);
   scheduleGrid.appendChild(daysContainer);
@@ -1036,6 +1081,7 @@ const adminScheduleState = {
   activeDayIndex: 0,
   dayCount: 7,
   autoStart: true,
+  layoutRetry: false,
   viewStartMin: VIEW_START_DEFAULT,
   viewEndMin: VIEW_END_DEFAULT,
 };
@@ -1043,10 +1089,21 @@ const adminScheduleState = {
 function renderAdminEditScheduleGrid() {
   const container = document.getElementById("adminEditScheduleGrid");
   if (!container) return;
+  attachAdminScheduleResizeObserver(container);
   const prevDays = container.querySelector(".schedule-days");
   if (prevDays) scheduleScrollState.admin = prevDays.scrollLeft;
   container.innerHTML = "";
-  const dayCount = getDayColumnCount(container);
+  let dayCount = getDayColumnCount(container);
+  if (container.clientWidth < 200) {
+    dayCount = adminScheduleState.dayCount || dayCount;
+    if (!adminScheduleState.layoutRetry) {
+      adminScheduleState.layoutRetry = true;
+      requestAnimationFrame(() => {
+        adminScheduleState.layoutRetry = false;
+        renderAdminEditScheduleGrid();
+      });
+    }
+  }
   if (adminScheduleState.dayCount !== dayCount) {
     adminScheduleState.dayCount = dayCount;
     if (adminScheduleState.autoStart) {
@@ -1066,7 +1123,7 @@ function renderAdminEditScheduleGrid() {
   const daysContainer = document.createElement("div");
   daysContainer.className = "schedule-days";
   daysContainer.style.setProperty("--day-count", String(dayCount));
-  daysContainer.style.gridTemplateColumns = `repeat(${dayCount}, minmax(100px, 1fr))`;
+  daysContainer.style.gridTemplateColumns = `repeat(${dayCount}, minmax(92px, 1fr))`;
   container.appendChild(timeColumn);
   container.appendChild(daysContainer);
   daysContainer.scrollLeft = scheduleScrollState.admin;
@@ -2675,6 +2732,7 @@ logoutBtn.addEventListener("click", async () => {
 loadProfile();
 loadUnits();
 renderScheduleGrid();
+attachScheduleResizeObserver();
 
 if (window.matchMedia && window.matchMedia("(orientation: portrait)").matches) {
   setProfilePaneCollapsed(true);
