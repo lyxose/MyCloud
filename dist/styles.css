@@ -601,6 +601,8 @@ body.is-admin .split {
   flex-direction: column;
   gap: 0.3rem;
   font-size: 0.75rem;
+  user-select: none;
+  touch-action: none;
 }
 
 .schedule-slot.selected {
@@ -612,6 +614,12 @@ body.is-admin .split {
   border-color: rgba(120, 130, 150, 0.45);
   color: #334155;
   cursor: pointer;
+}
+
+.schedule-slot.expired {
+  background: rgba(130, 140, 160, 0.35);
+  border-color: rgba(110, 120, 140, 0.45);
+  color: #2f3b4f;
 }
 
 .schedule-slot.locked .slot-count {
@@ -738,6 +746,35 @@ body.is-admin .split {
   font-size: 0.75rem;
   z-index: 20;
   white-space: pre-line;
+}
+
+.slot-action-menu {
+  position: fixed;
+  z-index: 30;
+  background: #ffffff;
+  border: 1px solid rgba(58, 123, 213, 0.2);
+  border-radius: 12px;
+  box-shadow: 0 12px 30px rgba(30, 60, 100, 0.2);
+  padding: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 140px;
+}
+
+.slot-action-menu button {
+  border: none;
+  background: #eef4fb;
+  color: #245aa4;
+  padding: 0.4rem 0.6rem;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.slot-action-menu button.danger {
+  background: #fde8e8;
+  color: #b42318;
 }
 
 .split {

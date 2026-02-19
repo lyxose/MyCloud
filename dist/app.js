@@ -491,7 +491,22 @@ function renderScheduleGrid() {
           renderScheduleGrid();
         });
 
-        enableSlotDrag(slotEl, slot);
+        const deleteSlot = () => {
+          scheduleState.slots = scheduleState.slots.filter((item) => item.id !== slot.id);
+          scheduleState.selectedIds.delete(slot.id);
+          renderScheduleGrid();
+        };
+        const editCapacity = () => {
+          const value = prompt("设置人数", String(slot.capacity || 1));
+          const num = Number(value);
+          if (!Number.isNaN(num) && num > 0) {
+            slot.capacity = num;
+            renderScheduleGrid();
+          }
+        };
+        attachMobileSlotHandlers(slotEl, slot, scheduleState, renderScheduleGrid, deleteSlot, editCapacity);
+
+        enableSlotDrag(slotEl, slot, scheduleState, renderScheduleGrid);
         enableSlotResize(slotEl, slot, renderScheduleGrid, scheduleState);
         timeline.appendChild(slotEl);
       });
@@ -504,9 +519,17 @@ function renderScheduleGrid() {
 }
 
 function addScheduleSlot({ date, startMin, endMin, capacity }) {
+  const dateKey = formatLocalDate(date);
+  const existing = scheduleState.slots.find(
+    (slot) => slot.date === dateKey && slot.startMin === startMin && slot.endMin === endMin && !slot.locked
+  );
+  if (existing) {
+    existing.capacity += capacity || 1;
+    return;
+  }
   scheduleState.slots.push({
     id: `slot_${Date.now()}_${Math.random().toString(16).slice(2)}`,
-    date: formatLocalDate(date),
+    date: dateKey,
     startMin,
     endMin,
     capacity: capacity || 1,
@@ -527,7 +550,191 @@ function toggleSlotSelection(id) {
   }
 }
 
-function enableSlotDrag(slotEl, slot) {
+function mergeOverlappingSlots(stateRef) {
+  const merged = [];
+  const map = new Map();
+  stateRef.slots.forEach((slot) => {
+    const key = `${slot.date}-${slot.startMin}-${slot.endMin}`;
+    const existing = map.get(key);
+    if (existing && !existing.locked && !slot.locked) {
+      existing.capacity += slot.capacity || 1;
+      return;
+    }
+    map.set(key, slot);
+    merged.push(slot);
+  });
+  stateRef.slots = merged;
+}
+
+let slotActionMenu = null;
+
+function closeSlotActionMenu() {
+  if (!slotActionMenu) return;
+  slotActionMenu.remove();
+  slotActionMenu = null;
+}
+
+function openSlotActionMenu(x, y, actions) {
+  closeSlotActionMenu();
+  const menu = document.createElement("div");
+  menu.className = "slot-action-menu";
+  actions.forEach((action) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = action.label;
+    if (action.danger) btn.classList.add("danger");
+    btn.addEventListener("click", () => {
+      closeSlotActionMenu();
+      action.onClick();
+    });
+    menu.appendChild(btn);
+  });
+  menu.style.left = `${Math.min(x, window.innerWidth - 160)}px`;
+  menu.style.top = `${Math.min(y, window.innerHeight - 160)}px`;
+  document.body.appendChild(menu);
+  slotActionMenu = menu;
+  document.addEventListener("touchstart", closeSlotActionMenu, { once: true });
+}
+
+function startTouchDrag(slot, stateRef, renderFn, startY) {
+  let dragStartY = startY;
+  let dragStartMin = slot.startMin;
+  let dragEndMin = slot.endMin;
+  const onMove = (event) => {
+    const touch = event.touches[0];
+    if (!touch) return;
+    const delta = touch.clientY - dragStartY;
+    const step = Math.round(delta / (PX_PER_MIN * 10)) * 10;
+    const duration = dragEndMin - dragStartMin;
+    let nextStart = Math.max(0, Math.min(1440 - duration, dragStartMin + step));
+    if (slot.date === formatLocalDate(new Date())) {
+      const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+      if (dragStartMin >= nowMin && nextStart < nowMin) nextStart = nowMin;
+    }
+    slot.startMin = nextStart;
+    slot.endMin = nextStart + duration;
+    renderFn();
+    event.preventDefault();
+  };
+  const onEnd = () => {
+    document.removeEventListener("touchmove", onMove);
+    document.removeEventListener("touchend", onEnd);
+    mergeOverlappingSlots(stateRef);
+    renderFn();
+  };
+  document.addEventListener("touchmove", onMove, { passive: false });
+  document.addEventListener("touchend", onEnd);
+}
+
+function startTouchResize(slotEl, slot, stateRef, renderFn, startY) {
+  let resizeEdge = null;
+  const body = slotEl.closest(".schedule-day-body");
+  if (!body) return;
+  const bodyTop = body.getBoundingClientRect().top;
+  const viewOffset = getViewOffsetPx(stateRef);
+  const onMove = (event) => {
+    const touch = event.touches[0];
+    if (!touch) return;
+    if (!resizeEdge) {
+      const rect = slotEl.getBoundingClientRect();
+      resizeEdge = touch.clientY < rect.top + rect.height / 2 ? "top" : "bottom";
+    }
+    const offsetY = touch.clientY - bodyTop + viewOffset;
+    const targetMin = Math.max(0, Math.round(offsetY / PX_PER_MIN / 10) * 10);
+    const minDuration = 10;
+    if (resizeEdge === "top") {
+      let nextStart = Math.min(slot.endMin - minDuration, targetMin);
+      if (slot.date === formatLocalDate(new Date())) {
+        const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+        if (nextStart < nowMin) nextStart = nowMin;
+      }
+      slot.startMin = Math.max(0, nextStart);
+    } else {
+      let nextEnd = Math.max(slot.startMin + minDuration, targetMin);
+      slot.endMin = Math.min(1440, nextEnd);
+    }
+    renderFn();
+    event.preventDefault();
+  };
+  const onEnd = () => {
+    document.removeEventListener("touchmove", onMove);
+    document.removeEventListener("touchend", onEnd);
+    mergeOverlappingSlots(stateRef);
+    renderFn();
+  };
+  document.addEventListener("touchmove", onMove, { passive: false });
+  document.addEventListener("touchend", onEnd);
+}
+
+function attachMobileSlotHandlers(slotEl, slot, stateRef, renderFn, onDelete, onCapacityEdit, onLockedTap) {
+  let pressTimer = null;
+  let moved = false;
+  let longPressed = false;
+  let startX = 0;
+  let startY = 0;
+
+  const cancelPress = () => {
+    if (pressTimer) clearTimeout(pressTimer);
+    pressTimer = null;
+  };
+
+  slotEl.addEventListener("touchstart", (event) => {
+    if (event.touches.length !== 1) return;
+    moved = false;
+    longPressed = false;
+    startX = event.touches[0].clientX;
+    startY = event.touches[0].clientY;
+    cancelPress();
+    pressTimer = setTimeout(() => {
+      longPressed = true;
+      if (slot.locked) return;
+      openSlotActionMenu(startX, startY, [
+        {
+          label: "拖动",
+          onClick: () => startTouchDrag(slot, stateRef, renderFn, startY),
+        },
+        {
+          label: "调整时长",
+          onClick: () => startTouchResize(slotEl, slot, stateRef, renderFn, startY),
+        },
+        {
+          label: "删除",
+          danger: true,
+          onClick: onDelete,
+        },
+      ]);
+    }, 500);
+  });
+
+  slotEl.addEventListener("touchmove", (event) => {
+    if (!pressTimer) return;
+    const touch = event.touches[0];
+    if (!touch) return;
+    const dx = Math.abs(touch.clientX - startX);
+    const dy = Math.abs(touch.clientY - startY);
+    if (dx > 6 || dy > 6) {
+      moved = true;
+      cancelPress();
+    }
+  });
+
+  slotEl.addEventListener("touchend", (event) => {
+    cancelPress();
+    if (longPressed || moved) return;
+    if (slot.locked) {
+      onLockedTap?.(event);
+      return;
+    }
+    if (stateRef.selectedIds.has(slot.id)) {
+      onCapacityEdit();
+      return;
+    }
+    stateRef.selectedIds = new Set([slot.id]);
+    renderFn();
+  });
+}
+
+function enableSlotDrag(slotEl, slot, stateRef, renderFn) {
   if (isDateBeforeToday(new Date(`${slot.date}T00:00:00`))) return;
   if (slot.locked) return;
   let startY = 0;
@@ -555,6 +762,8 @@ function enableSlotDrag(slotEl, slot) {
     dragging = false;
     document.removeEventListener("mousemove", onMove);
     document.removeEventListener("mouseup", onUp);
+    mergeOverlappingSlots(stateRef);
+    renderFn();
   };
 
   slotEl.addEventListener("mousedown", (event) => {
@@ -634,6 +843,8 @@ function enableSlotResize(slotEl, slot, renderFn, stateRef) {
     resizeContext = null;
     document.removeEventListener("mousemove", onMove);
     document.removeEventListener("mouseup", onUp);
+    mergeOverlappingSlots(stateRef);
+    renderFn();
   };
 
   const bindHandle = (handle, edge) => {
@@ -846,21 +1057,41 @@ function renderAdminEditScheduleGrid() {
       .forEach((slot) => {
         const slotEl = document.createElement("div");
         slotEl.className = "schedule-slot";
+        if (slot.locked) {
+          slotEl.classList.add("locked");
+        }
+        const isExpired = isDateBeforeToday(date)
+          || (date.toDateString() === new Date().toDateString()
+            && slot.endMin <= (new Date().getHours() * 60 + new Date().getMinutes()));
+        if (isExpired) {
+          slotEl.classList.add("expired");
+        }
         if (adminScheduleState.selectedIds.has(slot.id)) {
           slotEl.classList.add("selected");
         }
         slotEl.style.top = `${slot.startMin * PX_PER_MIN}px`;
         slotEl.style.height = `${(slot.endMin - slot.startMin) * PX_PER_MIN}px`;
         slotEl.dataset.id = slot.id;
-        slotEl.innerHTML = `
-          <div class="slot-time">
-            <span class="slot-time-start">${formatMinutes(slot.startMin)}</span>
-            <span class="slot-time-end">${formatMinutes(slot.endMin)}</span>
-          </div>
-          <div class="slot-count">${slot.capacity}人</div>
-          <div class="slot-handle top">▲</div>
-          <div class="slot-handle bottom">▼</div>
-        `;
+        if (slot.locked) {
+          const names = (slot.participants || []).map((p) => p.name).join("、") || "已预约";
+          slotEl.innerHTML = `
+            <div class="slot-time">
+              <span class="slot-time-start">${formatMinutes(slot.startMin)}</span>
+              <span class="slot-time-end">${formatMinutes(slot.endMin)}</span>
+            </div>
+            <div class="slot-count">${names}</div>
+          `;
+        } else {
+          slotEl.innerHTML = `
+            <div class="slot-time">
+              <span class="slot-time-start">${formatMinutes(slot.startMin)}</span>
+              <span class="slot-time-end">${formatMinutes(slot.endMin)}</span>
+            </div>
+            <div class="slot-count">${slot.capacity}人</div>
+            <div class="slot-handle top">▲</div>
+            <div class="slot-handle bottom">▼</div>
+          `;
+        }
 
         slotEl.addEventListener("click", (event) => {
           event.stopPropagation();
@@ -884,8 +1115,38 @@ function renderAdminEditScheduleGrid() {
           renderAdminEditScheduleGrid();
         });
 
+        const deleteSlot = () => {
+          if (slot.locked) return;
+          adminScheduleState.slots = adminScheduleState.slots.filter((item) => item.id !== slot.id);
+          adminScheduleState.selectedIds.delete(slot.id);
+          renderAdminEditScheduleGrid();
+        };
+        const editCapacity = () => {
+          if (slot.locked) return;
+          const value = prompt("设置人数", String(slot.capacity || 1));
+          const num = Number(value);
+          if (!Number.isNaN(num) && num > 0) {
+            slot.capacity = num;
+            renderAdminEditScheduleGrid();
+          }
+        };
+        const lockedTap = (touchEvent) => {
+          if (!slot.locked) return;
+          const touch = touchEvent.changedTouches?.[0];
+          const contacts = (slot.participants || [])
+            .map((p) => {
+              const info = adminEditState.participants?.[p.user_uid] || {};
+              return `${p.name} ${info.alipay_phone || "-"} ${info.wechat || "-"}`;
+            })
+            .join("\n");
+          if (contacts && touch) {
+            showTooltip(contacts, touch.clientX + 8, touch.clientY + 8);
+          }
+        };
+        attachMobileSlotHandlers(slotEl, slot, adminScheduleState, renderAdminEditScheduleGrid, deleteSlot, editCapacity, lockedTap);
+
         if (!slot.locked) {
-          enableAdminSlotDrag(slotEl, slot);
+          enableAdminSlotDrag(slotEl, slot, adminScheduleState, renderAdminEditScheduleGrid);
           enableSlotResize(slotEl, slot, renderAdminEditScheduleGrid, adminScheduleState);
         }
         timeline.appendChild(slotEl);
@@ -899,9 +1160,17 @@ function renderAdminEditScheduleGrid() {
 }
 
 function addAdminScheduleSlot({ date, startMin, endMin, capacity }) {
+  const dateKey = formatLocalDate(date);
+  const existing = adminScheduleState.slots.find(
+    (slot) => slot.date === dateKey && slot.startMin === startMin && slot.endMin === endMin && !slot.locked
+  );
+  if (existing) {
+    existing.capacity += capacity || 1;
+    return;
+  }
   adminScheduleState.slots.push({
     id: `slot_${Date.now()}_${Math.random().toString(16).slice(2)}`,
-    date: formatLocalDate(date),
+    date: dateKey,
     startMin,
     endMin,
     capacity: capacity || 1,
@@ -916,7 +1185,7 @@ function toggleAdminSlotSelection(id) {
   }
 }
 
-function enableAdminSlotDrag(slotEl, slot) {
+function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
   if (isDateBeforeToday(new Date(`${slot.date}T00:00:00`))) return;
   let startY = 0;
   let startMin = slot.startMin;
@@ -942,6 +1211,8 @@ function enableAdminSlotDrag(slotEl, slot) {
     dragging = false;
     document.removeEventListener("mousemove", onMove);
     document.removeEventListener("mouseup", onUp);
+    mergeOverlappingSlots(stateRef);
+    renderFn();
   };
 
   slotEl.addEventListener("mousedown", (event) => {
@@ -1180,7 +1451,7 @@ function renderExperiments() {
       </div>
       <div class="experiment-card-body">
         <p>${exp.description || "暂无简介"}</p>
-        ${exp.schedule_required ? `<p class="hint">预约数量要求：${exp.schedule_slots_required || "=1"}</p>` : ""}
+        ${exp.schedule_required ? `<p class="hint">预约数量要求：${exp.schedule_slots_required || "=1"} 个时段</p>` : ""}
         <p class="hint">${eligibility}</p>
       </div>
       <div class="experiment-card-actions">
@@ -1811,9 +2082,10 @@ function renderExperimentSlots(exp, slots) {
   if (existing) existing.remove();
   const slotWrap = document.createElement("div");
   slotWrap.className = "experiment-slots";
-  state.experimentSlots[exp.experiment_uid] = slots;
+  const sortedSlots = [...slots].sort((a, b) => Date.parse(a.start_time || "") - Date.parse(b.start_time || ""));
+  state.experimentSlots[exp.experiment_uid] = sortedSlots;
   slotWrap.innerHTML = `<p class="hint">请选择可预约时间段</p>`;
-  if (!slots.length) {
+  if (!sortedSlots.length) {
     const empty = document.createElement("p");
     empty.className = "hint";
     empty.textContent = "暂无可预约时间段";
@@ -1823,7 +2095,7 @@ function renderExperimentSlots(exp, slots) {
     }
     setStatus(experimentStatus, "暂无可预约时间段", true);
   } else {
-    slots.forEach((slot) => {
+    sortedSlots.forEach((slot) => {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "ghost experiment-slot-btn";
@@ -1874,7 +2146,6 @@ async function applyExperiment(exp, selectedSlots) {
       const contact = data.contact_phone ? `主试联系方式：${data.contact_phone}` : "请联系主试确认信息";
       setStatus(experimentStatus, `报名成功，${contact}`);
     }
-    await loadExperiments();
     clearExperimentSelection();
     renderExperiments();
   } catch (error) {
@@ -2082,6 +2353,11 @@ loginForm.addEventListener("submit", async (event) => {
 
 profileForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  const submitBtn = profileForm.querySelector("button[type='submit']");
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.classList.add("loading");
+  }
   setStatus(profileStatus, "保存中...");
   try {
     const updates = toJsonForm(profileForm);
@@ -2090,6 +2366,11 @@ profileForm.addEventListener("submit", async (event) => {
     await loadProfile();
   } catch (error) {
     setStatus(profileStatus, error.message, true);
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.classList.remove("loading");
+    }
   }
 });
 
@@ -2134,6 +2415,11 @@ passwordForm?.addEventListener("submit", async (event) => {
 
 contactForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
+  const submitBtn = contactForm.querySelector("button[type='submit']");
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.classList.add("loading");
+  }
   setStatus(contactStatus, "保存中...");
   try {
     const updates = toJsonForm(contactForm);
@@ -2142,6 +2428,11 @@ contactForm?.addEventListener("submit", async (event) => {
     await loadProfile();
   } catch (error) {
     setStatus(contactStatus, error.message, true);
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.classList.remove("loading");
+    }
   }
 });
 
@@ -2198,13 +2489,26 @@ adminExperimentForm?.addEventListener("submit", async (event) => {
 
 experimentForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  const submitBtn = experimentForm.querySelector("button[type='submit']");
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.classList.add("loading");
+  }
   if (!state.selectedExperimentUid) {
     setStatus(experimentStatus, "请先选中实验", true);
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.classList.remove("loading");
+    }
     return;
   }
   const exp = state.experiments.find((item) => item.experiment_uid === state.selectedExperimentUid);
   if (!exp) {
     setStatus(experimentStatus, "未找到选中的实验", true);
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.classList.remove("loading");
+    }
     return;
   }
   if (exp.schedule_required) {
@@ -2218,6 +2522,10 @@ experimentForm.addEventListener("submit", async (event) => {
       (requirement.operator === "<=" && count <= requirement.count);
     if (!meets) {
       setStatus(experimentStatus, `请选择符合数量要求的时间段（${requirement.raw}）`, true);
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.classList.remove("loading");
+      }
       return;
     }
   }
@@ -2227,7 +2535,18 @@ experimentForm.addEventListener("submit", async (event) => {
     ? Array.from(state.selectedSlotIds)
     : [];
   const selectedSlots = slots.filter((item) => slotIds.includes(String(item.id)));
-  await applyExperiment(exp, exp.schedule_required ? selectedSlots : null);
+  try {
+    await applyExperiment(exp, exp.schedule_required ? selectedSlots : null);
+  } finally {
+    await loadExperiments();
+    if (exp.schedule_required) {
+      await showExperimentDetail(exp);
+    }
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.classList.remove("loading");
+    }
+  }
 });
 
 logoutBtn.addEventListener("click", async () => {
