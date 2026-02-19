@@ -122,6 +122,7 @@ const adminExperimentsRefresh = document.getElementById("adminExperimentsRefresh
 const VIEW_START_DEFAULT = 9 * 60;
 const VIEW_END_DEFAULT = 18 * 60;
 const VIEW_STEP_MIN = 60;
+const IS_COARSE_POINTER = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
 
 function setStatus(el, text, isError = false) {
   el.textContent = text;
@@ -149,9 +150,10 @@ async function apiRequest(path, options = {}) {
   const contentType = response.headers.get("content-type") || "";
   const data = contentType.includes("application/json") ? await response.json() : await response.text();
   if (!response.ok) {
-    const message = data?.detail && data?.error
-      ? `${data.error}: ${data.detail}`
-      : data?.error || data || "请求失败";
+    let message = data?.error || data?.detail || data || "请求失败";
+    if (data?.error === "Server error" && data?.detail) {
+      message = data.detail;
+    }
     throw new Error(message);
   }
   return data;
@@ -360,7 +362,8 @@ function buildWeekDates(startDate) {
 
 function renderScheduleGrid() {
   if (!scheduleGrid) return;
-  const previousScroll = scheduleGrid.querySelector(".schedule-days")?.scrollLeft || 0;
+  const prevDays = scheduleGrid.querySelector(".schedule-days");
+  if (prevDays) scheduleScrollState.schedule = prevDays.scrollLeft;
   scheduleGrid.innerHTML = "";
   const days = buildWeekDates(scheduleState.weekStart);
   scheduleTitle.textContent = `${days[0].getMonth() + 1}/${days[0].getDate()} - ${days[6].getMonth() + 1}/${days[6].getDate()}`;
@@ -370,10 +373,10 @@ function renderScheduleGrid() {
 
   scheduleGrid.appendChild(timeColumn);
   scheduleGrid.appendChild(daysContainer);
-  daysContainer.scrollLeft = previousScroll;
-  requestAnimationFrame(() => {
-    daysContainer.scrollLeft = previousScroll;
-  });
+  daysContainer.scrollLeft = scheduleScrollState.schedule;
+  daysContainer.addEventListener("scroll", () => {
+    scheduleScrollState.schedule = daysContainer.scrollLeft;
+  }, { passive: true });
 
   days.forEach((date, index) => {
     const dayEl = document.createElement("div");
@@ -385,7 +388,7 @@ function renderScheduleGrid() {
     header.addEventListener("click", () => {
       scheduleState.activeDayIndex = index;
       renderScheduleGrid();
-    });
+    }, { passive: true });
 
     const body = document.createElement("div");
     body.className = "schedule-day-body";
@@ -451,7 +454,7 @@ function renderScheduleGrid() {
 
       addScheduleSlot({ date, startMin, endMin, capacity: 1 });
       renderScheduleGrid();
-    });
+    }, { passive: true });
 
     scheduleState.slots
       .filter((slot) => slot.date === formatLocalDate(date))
@@ -461,38 +464,18 @@ function renderScheduleGrid() {
         if (slot.locked) {
           slotEl.classList.add("locked");
         }
-        const isExpired = isDateBeforeToday(date)
-          || (date.toDateString() === new Date().toDateString()
-            && slot.endMin <= (new Date().getHours() * 60 + new Date().getMinutes()));
-        if (isExpired) {
-          slotEl.classList.add("expired");
-        }
-        if (slot.locked) {
-          slotEl.classList.add("locked");
-        }
         if (scheduleState.selectedIds.has(slot.id)) {
           slotEl.classList.add("selected");
         }
+        slotEl.style.top = `${slot.startMin * PX_PER_MIN}px`;
+        slotEl.style.height = `${(slot.endMin - slot.startMin) * PX_PER_MIN}px`;
+        slotEl.dataset.id = slot.id;
         if (slot.locked) {
           const names = (slot.participants || []).map((p) => p.name).join("、") || "已预约";
           slotEl.innerHTML = `
             <div class="slot-time">
               <span class="slot-time-start">${formatMinutes(slot.startMin)}</span>
               <span class="slot-time-end">${formatMinutes(slot.endMin)}</span>
-            </div>
-            <div class="slot-count">${names}</div>
-          `;
-        } else {
-          slotEl.innerHTML = `
-            <div class="slot-time">
-              <span class="slot-time-start">${formatMinutes(slot.startMin)}</span>
-              <span class="slot-time-end">${formatMinutes(slot.endMin)}</span>
-            </div>
-            <div class="slot-count">${slot.capacity}人</div>
-            <div class="slot-handle top">▲</div>
-            <div class="slot-handle bottom">▼</div>
-          `;
-        }
             </div>
             <div class="slot-count">${names}</div>
           `;
@@ -516,7 +499,7 @@ function renderScheduleGrid() {
             scheduleState.selectedIds = new Set([slot.id]);
           }
           renderScheduleGrid();
-        });
+        }, { passive: true });
 
         const deleteSlot = () => {
           scheduleState.slots = scheduleState.slots.filter((item) => item.id !== slot.id);
@@ -594,9 +577,14 @@ function mergeOverlappingSlots(stateRef) {
 }
 
 let slotActionMenu = null;
+let slotActionMenuCloseHandler = null;
 
 function closeSlotActionMenu() {
   if (!slotActionMenu) return;
+  if (slotActionMenuCloseHandler) {
+    document.removeEventListener("touchstart", slotActionMenuCloseHandler);
+    slotActionMenuCloseHandler = null;
+  }
   slotActionMenu.remove();
   slotActionMenu = null;
 }
@@ -620,7 +608,10 @@ function openSlotActionMenu(x, y, actions) {
   menu.style.top = `${Math.min(y, window.innerHeight - 160)}px`;
   document.body.appendChild(menu);
   slotActionMenu = menu;
-  document.addEventListener("touchstart", closeSlotActionMenu, { once: true });
+  slotActionMenuCloseHandler = (event) => {
+    if (!menu.contains(event.target)) closeSlotActionMenu();
+  };
+  document.addEventListener("touchstart", slotActionMenuCloseHandler, { passive: true });
 }
 
 function startTouchDrag(slot, stateRef, renderFn, startY) {
@@ -731,7 +722,7 @@ function attachMobileSlotHandlers(slotEl, slot, stateRef, renderFn, onDelete, on
         },
       ]);
     }, 500);
-  });
+  }, { passive: true });
 
   slotEl.addEventListener("touchmove", (event) => {
     if (!pressTimer) return;
@@ -743,7 +734,7 @@ function attachMobileSlotHandlers(slotEl, slot, stateRef, renderFn, onDelete, on
       moved = true;
       cancelPress();
     }
-  });
+  }, { passive: true });
 
   slotEl.addEventListener("touchend", (event) => {
     cancelPress();
@@ -758,22 +749,27 @@ function attachMobileSlotHandlers(slotEl, slot, stateRef, renderFn, onDelete, on
     }
     stateRef.selectedIds = new Set([slot.id]);
     renderFn();
-  });
+  }, { passive: true });
 }
 
 function enableSlotDrag(slotEl, slot, stateRef, renderFn) {
   if (isDateBeforeToday(new Date(`${slot.date}T00:00:00`))) return;
   if (slot.locked) return;
+  if (IS_COARSE_POINTER) return;
+  let startX = 0;
   let startY = 0;
   let startMin = slot.startMin;
   let endMin = slot.endMin;
   let dragging = false;
-  let moved = false;
 
   const onMove = (event) => {
-    if (!dragging) return;
+    const dx = event.clientX - startX;
+    const dy = event.clientY - startY;
+    if (!dragging) {
+      if (Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
+      dragging = true;
+    }
     const delta = event.clientY - startY;
-    if (delta !== 0) moved = true;
     const step = Math.round(delta / (PX_PER_MIN * 10)) * 10;
     const duration = endMin - startMin;
     let nextStart = Math.max(0, Math.min(1440 - duration, startMin + step));
@@ -784,23 +780,23 @@ function enableSlotDrag(slotEl, slot, stateRef, renderFn) {
     let nextEnd = nextStart + duration;
     slot.startMin = nextStart;
     slot.endMin = nextEnd;
-    renderScheduleGrid();
+    renderFn();
   };
 
   const onUp = () => {
-    dragging = false;
     document.removeEventListener("mousemove", onMove);
     document.removeEventListener("mouseup", onUp);
-    if (moved) {
+    if (dragging) {
       mergeOverlappingSlots(stateRef);
       renderFn();
     }
-    moved = false;
+    dragging = false;
   };
 
   slotEl.addEventListener("mousedown", (event) => {
     if (event.button !== 0) return;
-    dragging = true;
+    dragging = false;
+    startX = event.clientX;
     startY = event.clientY;
     startMin = slot.startMin;
     endMin = slot.endMin;
@@ -808,11 +804,34 @@ function enableSlotDrag(slotEl, slot, stateRef, renderFn) {
     document.addEventListener("mouseup", onUp);
   });
 
+  let pressTimer = null;
+  slotEl.addEventListener("touchstart", (event) => {
+    if (event.touches.length !== 1) return;
+    pressTimer = setTimeout(() => {
+      dragging = true;
+      startY = event.touches[0].clientY;
+      startMin = slot.startMin;
+      endMin = slot.endMin;
+    }, 350);
+  });
+
+  slotEl.addEventListener("touchmove", (event) => {
+    if (!dragging) return;
+    const fakeEvent = { clientY: event.touches[0].clientY };
+    onMove(fakeEvent);
+    event.preventDefault();
+  }, { passive: false });
+
+  slotEl.addEventListener("touchend", () => {
+    if (pressTimer) clearTimeout(pressTimer);
+    if (dragging) onUp();
+  });
 }
 
 function enableSlotResize(slotEl, slot, renderFn, stateRef) {
   if (isDateBeforeToday(new Date(`${slot.date}T00:00:00`))) return;
   if (slot.locked) return;
+  if (IS_COARSE_POINTER) return;
   const topHandle = slotEl.querySelector(".slot-handle.top");
   const bottomHandle = slotEl.querySelector(".slot-handle.bottom");
   if (!topHandle || !bottomHandle) return;
@@ -968,6 +987,11 @@ function buildSchedulePayload() {
   });
 }
 
+const scheduleScrollState = {
+  schedule: 0,
+  admin: 0,
+};
+
 const adminScheduleState = {
   weekStart: startOfWeek(new Date()),
   slots: [],
@@ -980,7 +1004,8 @@ const adminScheduleState = {
 function renderAdminEditScheduleGrid() {
   const container = document.getElementById("adminEditScheduleGrid");
   if (!container) return;
-  const previousScroll = container.querySelector(".schedule-days")?.scrollLeft || 0;
+  const prevDays = container.querySelector(".schedule-days");
+  if (prevDays) scheduleScrollState.admin = prevDays.scrollLeft;
   container.innerHTML = "";
   const days = buildWeekDates(adminScheduleState.weekStart);
 
@@ -994,10 +1019,10 @@ function renderAdminEditScheduleGrid() {
   daysContainer.className = "schedule-days";
   container.appendChild(timeColumn);
   container.appendChild(daysContainer);
-  daysContainer.scrollLeft = previousScroll;
-  requestAnimationFrame(() => {
-    daysContainer.scrollLeft = previousScroll;
-  });
+  daysContainer.scrollLeft = scheduleScrollState.admin;
+  daysContainer.addEventListener("scroll", () => {
+    scheduleScrollState.admin = daysContainer.scrollLeft;
+  }, { passive: true });
 
   days.forEach((date, index) => {
     const dayEl = document.createElement("div");
@@ -1009,7 +1034,7 @@ function renderAdminEditScheduleGrid() {
     header.addEventListener("click", () => {
       adminScheduleState.activeDayIndex = index;
       renderAdminEditScheduleGrid();
-    });
+    }, { passive: true });
 
     const body = document.createElement("div");
     body.className = "schedule-day-body";
@@ -1065,7 +1090,7 @@ function renderAdminEditScheduleGrid() {
       const endMin = Math.min(1440, startMin + durationMin);
       addAdminScheduleSlot({ date, startMin, endMin, capacity: 1 });
       renderAdminEditScheduleGrid();
-    });
+    }, { passive: true });
 
     adminScheduleState.slots
       .filter((slot) => slot.date === formatLocalDate(date))
@@ -1128,7 +1153,7 @@ function renderAdminEditScheduleGrid() {
             adminScheduleState.selectedIds = new Set([slot.id]);
           }
           renderAdminEditScheduleGrid();
-        });
+        }, { passive: true });
 
         const deleteSlot = () => {
           if (slot.locked) return;
@@ -1202,16 +1227,21 @@ function toggleAdminSlotSelection(id) {
 
 function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
   if (isDateBeforeToday(new Date(`${slot.date}T00:00:00`))) return;
+  if (IS_COARSE_POINTER) return;
+  let startX = 0;
   let startY = 0;
   let startMin = slot.startMin;
   let endMin = slot.endMin;
   let dragging = false;
-  let moved = false;
 
   const onMove = (event) => {
-    if (!dragging) return;
+    const dx = event.clientX - startX;
+    const dy = event.clientY - startY;
+    if (!dragging) {
+      if (Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
+      dragging = true;
+    }
     const delta = event.clientY - startY;
-    if (delta !== 0) moved = true;
     const step = Math.round(delta / (PX_PER_MIN * 10)) * 10;
     const duration = endMin - startMin;
     let nextStart = Math.max(0, Math.min(1440 - duration, startMin + step));
@@ -1221,23 +1251,23 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
     }
     slot.startMin = nextStart;
     slot.endMin = nextStart + duration;
-    renderAdminEditScheduleGrid();
+    renderFn();
   };
 
   const onUp = () => {
-    dragging = false;
     document.removeEventListener("mousemove", onMove);
     document.removeEventListener("mouseup", onUp);
-    if (moved) {
+    if (dragging) {
       mergeOverlappingSlots(stateRef);
       renderFn();
     }
-    moved = false;
+    dragging = false;
   };
 
   slotEl.addEventListener("mousedown", (event) => {
     if (event.button !== 0) return;
-    dragging = true;
+    dragging = false;
+    startX = event.clientX;
     startY = event.clientY;
     startMin = slot.startMin;
     endMin = slot.endMin;
@@ -1245,6 +1275,28 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
     document.addEventListener("mouseup", onUp);
   });
 
+  let pressTimer = null;
+  slotEl.addEventListener("touchstart", (event) => {
+    if (event.touches.length !== 1) return;
+    pressTimer = setTimeout(() => {
+      dragging = true;
+      startY = event.touches[0].clientY;
+      startMin = slot.startMin;
+      endMin = slot.endMin;
+    }, 350);
+  });
+
+  slotEl.addEventListener("touchmove", (event) => {
+    if (!dragging) return;
+    const fakeEvent = { clientY: event.touches[0].clientY };
+    onMove(fakeEvent);
+    event.preventDefault();
+  }, { passive: false });
+
+  slotEl.addEventListener("touchend", () => {
+    if (pressTimer) clearTimeout(pressTimer);
+    if (dragging) onUp();
+  });
 }
 
 function buildAdminSchedulePayload() {
