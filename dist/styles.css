@@ -506,6 +506,7 @@ textarea:focus {
   overflow-x: auto;
   overflow-y: hidden;
   width: 100%;
+  scroll-behavior: smooth;
 }
 
 .schedule-grid.no-time {
@@ -604,6 +605,17 @@ body.is-admin .split {
 
 .schedule-slot.selected {
   outline: 2px solid #245aa4;
+}
+
+.schedule-slot.locked {
+  background: rgba(140, 150, 170, 0.3);
+  border-color: rgba(120, 130, 150, 0.45);
+  color: #334155;
+  cursor: pointer;
+}
+
+.schedule-slot.locked .slot-count {
+  font-size: 0.72rem;
 }
 
 .schedule-slot .slot-time {

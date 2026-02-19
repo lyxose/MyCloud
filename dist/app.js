@@ -8,13 +8,14 @@ const state = {
   adminExperiments: [],
   adminActiveTab: "new",
   selectedExperimentUid: null,
-  selectedSlotId: null,
+  selectedSlotIds: new Set(),
   experimentSlots: {},
 };
 
 const adminEditState = {
   experiment: null,
   slots: [],
+  participants: {},
 };
 
 const DEFAULT_UNITS = [
@@ -108,6 +109,8 @@ const scheduleTitle = document.getElementById("scheduleTitle");
 const scheduleUp = document.getElementById("scheduleUp");
 const scheduleDown = document.getElementById("scheduleDown");
 const scheduleRequired = document.getElementById("scheduleRequired");
+const scheduleSlotsRequiredField = document.getElementById("scheduleSlotsRequiredField");
+const scheduleSlotsRequired = document.getElementById("scheduleSlotsRequired");
 const locationSelect = document.getElementById("locationSelect");
 const locationLinkField = document.getElementById("locationLinkField");
 const locationCustomField = document.getElementById("locationCustomField");
@@ -448,21 +451,35 @@ function renderScheduleGrid() {
       .forEach((slot) => {
         const slotEl = document.createElement("div");
         slotEl.className = "schedule-slot";
+        if (slot.locked) {
+          slotEl.classList.add("locked");
+        }
         if (scheduleState.selectedIds.has(slot.id)) {
           slotEl.classList.add("selected");
         }
         slotEl.style.top = `${slot.startMin * PX_PER_MIN}px`;
         slotEl.style.height = `${(slot.endMin - slot.startMin) * PX_PER_MIN}px`;
         slotEl.dataset.id = slot.id;
-        slotEl.innerHTML = `
-          <div class="slot-time">
-            <span class="slot-time-start">${formatMinutes(slot.startMin)}</span>
-            <span class="slot-time-end">${formatMinutes(slot.endMin)}</span>
-          </div>
-          <div class="slot-count">${slot.capacity}人</div>
-          <div class="slot-handle top">▲</div>
-          <div class="slot-handle bottom">▼</div>
-        `;
+        if (slot.locked) {
+          const names = (slot.participants || []).map((p) => p.name).join("、") || "已预约";
+          slotEl.innerHTML = `
+            <div class="slot-time">
+              <span class="slot-time-start">${formatMinutes(slot.startMin)}</span>
+              <span class="slot-time-end">${formatMinutes(slot.endMin)}</span>
+            </div>
+            <div class="slot-count">${names}</div>
+          `;
+        } else {
+          slotEl.innerHTML = `
+            <div class="slot-time">
+              <span class="slot-time-start">${formatMinutes(slot.startMin)}</span>
+              <span class="slot-time-end">${formatMinutes(slot.endMin)}</span>
+            </div>
+            <div class="slot-count">${slot.capacity}人</div>
+            <div class="slot-handle top">▲</div>
+            <div class="slot-handle bottom">▼</div>
+          `;
+        }
 
         slotEl.addEventListener("click", (event) => {
           event.stopPropagation();
@@ -512,6 +529,7 @@ function toggleSlotSelection(id) {
 
 function enableSlotDrag(slotEl, slot) {
   if (isDateBeforeToday(new Date(`${slot.date}T00:00:00`))) return;
+  if (slot.locked) return;
   let startY = 0;
   let startMin = slot.startMin;
   let endMin = slot.endMin;
@@ -575,6 +593,7 @@ function enableSlotDrag(slotEl, slot) {
 
 function enableSlotResize(slotEl, slot, renderFn, stateRef) {
   if (isDateBeforeToday(new Date(`${slot.date}T00:00:00`))) return;
+  if (slot.locked) return;
   const topHandle = slotEl.querySelector(".slot-handle.top");
   const bottomHandle = slotEl.querySelector(".slot-handle.bottom");
   if (!topHandle || !bottomHandle) return;
@@ -845,6 +864,18 @@ function renderAdminEditScheduleGrid() {
 
         slotEl.addEventListener("click", (event) => {
           event.stopPropagation();
+          if (slot.locked) {
+            const contacts = (slot.participants || [])
+              .map((p) => {
+                const info = adminEditState.participants?.[p.user_uid] || {};
+                return `${p.name} ${info.alipay_phone || "-"} ${info.wechat || "-"}`;
+              })
+              .join("\n");
+            if (contacts) {
+              showTooltip(contacts, event.pageX + 8, event.pageY + 8);
+            }
+            return;
+          }
           if (event.ctrlKey || event.metaKey) {
             toggleAdminSlotSelection(slot.id);
           } else {
@@ -853,8 +884,10 @@ function renderAdminEditScheduleGrid() {
           renderAdminEditScheduleGrid();
         });
 
-        enableAdminSlotDrag(slotEl, slot);
-        enableSlotResize(slotEl, slot, renderAdminEditScheduleGrid, adminScheduleState);
+        if (!slot.locked) {
+          enableAdminSlotDrag(slotEl, slot);
+          enableSlotResize(slotEl, slot, renderAdminEditScheduleGrid, adminScheduleState);
+        }
         timeline.appendChild(slotEl);
       });
 
@@ -957,16 +990,27 @@ function buildAdminSchedulePayload() {
   });
 }
 
+function parseSlotParticipants(slot) {
+  try {
+    return JSON.parse(slot.participants_json || "[]");
+  } catch {
+    return [];
+  }
+}
+
 function convertSlotToSchedule(slot) {
   if (!slot.start_time || !slot.end_time) return null;
   const start = new Date(slot.start_time);
   const end = new Date(slot.end_time);
   return {
     id: `existing_${slot.id}`,
+    originalId: slot.id,
     date: formatLocalDate(start),
     startMin: start.getHours() * 60 + start.getMinutes(),
     endMin: end.getHours() * 60 + end.getMinutes(),
     capacity: slot.capacity || 1,
+    locked: slot.locked === 1,
+    participants: parseSlotParticipants(slot),
   };
 }
 
@@ -1036,7 +1080,7 @@ async function loadExperiments() {
       const exists = state.experiments.some((exp) => exp.experiment_uid === state.selectedExperimentUid);
       if (!exists) {
         state.selectedExperimentUid = null;
-        state.selectedSlotId = null;
+        state.selectedSlotIds.clear();
       }
     }
     renderExperiments();
@@ -1047,7 +1091,7 @@ async function loadExperiments() {
 
 function clearExperimentSelection() {
   state.selectedExperimentUid = null;
-  state.selectedSlotId = null;
+  state.selectedSlotIds.clear();
 }
 
 function setSelectedExperiment(exp, slot) {
@@ -1065,7 +1109,8 @@ function setSelectedExperiment(exp, slot) {
   }
 
   state.selectedExperimentUid = exp.experiment_uid;
-  state.selectedSlotId = slot?.id || null;
+  state.selectedSlotIds.clear();
+  if (slot?.id) state.selectedSlotIds.add(String(slot.id));
   renderExperiments();
 
   if (exp.schedule_required) {
@@ -1080,6 +1125,27 @@ function setSelectedExperiment(exp, slot) {
   } else {
     setStatus(experimentStatus, `已选中实验：${exp.name}`);
   }
+}
+
+function parseSlotRequirement(value) {
+  const raw = String(value || "=1").trim();
+  const match = raw.match(/^(==|=|>=|<=|>|<)\s*(\d+)$/);
+  if (!match) return { operator: "=", count: 1, raw: "=1" };
+  const operator = match[1] === "==" ? "=" : match[1];
+  return { operator, count: Number(match[2]), raw: `${operator}${Number(match[2])}` };
+}
+
+function toggleScheduleSlotSelection(exp, slot, slots) {
+  state.selectedExperimentUid = exp.experiment_uid;
+  const key = String(slot.id);
+  if (state.selectedSlotIds.has(key)) {
+    state.selectedSlotIds.delete(key);
+  } else {
+    state.selectedSlotIds.add(key);
+  }
+  renderExperimentSlots(exp, slots);
+  const count = state.selectedSlotIds.size;
+  setStatus(experimentStatus, count > 0 ? `已选择 ${count} 个时间段` : "请选择预约时间段");
 }
 
 function renderExperiments() {
@@ -1114,6 +1180,7 @@ function renderExperiments() {
       </div>
       <div class="experiment-card-body">
         <p>${exp.description || "暂无简介"}</p>
+        ${exp.schedule_required ? `<p class="hint">预约数量要求：${exp.schedule_slots_required || "=1"}</p>` : ""}
         <p class="hint">${eligibility}</p>
       </div>
       <div class="experiment-card-actions">
@@ -1163,11 +1230,21 @@ function renderAdminTabs() {
   newTab.addEventListener("click", () => selectAdminTab("new"));
   adminTabs.appendChild(newTab);
 
-  state.adminExperiments.forEach((exp) => {
+  const sortedExperiments = [...state.adminExperiments].sort((a, b) => {
+    const aTime = Date.parse(a.updated_at || a.created_at || 0);
+    const bTime = Date.parse(b.updated_at || b.created_at || 0);
+    return bTime - aTime;
+  });
+
+  sortedExperiments.forEach((exp) => {
     const tab = document.createElement("button");
     tab.className = "tab";
     tab.dataset.adminTab = exp.experiment_uid;
     tab.textContent = exp.name;
+    const updatedLabel = exp.updated_at ? new Date(exp.updated_at).toLocaleString() : "-";
+    const recruited = exp.recruited_count ?? 0;
+    const capacity = exp.capacity_total ?? 0;
+    tab.title = `ID: ${exp.experiment_uid}\n类型: ${exp.type}\n已招募: ${recruited}/${capacity}\n最后修改: ${updatedLabel}`;
     tab.addEventListener("click", () => selectAdminTab(exp.experiment_uid));
     adminTabs.appendChild(tab);
   });
@@ -1222,6 +1299,7 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
   panel.classList.add("active");
   adminEditState.experiment = experiment;
   adminEditState.slots = slots;
+  adminEditState.participants = participants || {};
   adminScheduleState.weekStart = startOfWeek(new Date());
   adminScheduleState.activeDayIndex = 0;
   adminScheduleState.slots = [];
@@ -1230,6 +1308,7 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
     <div class="admin-layout">
       <div class="admin-left">
         <h4>${experiment.name}</h4>
+        <p class="hint">实验ID：${experiment.experiment_uid}</p>
         <p class="hint">${experiment.type} · ${experiment.location}</p>
         <button class="ghost" id="pauseExperimentBtn">${experiment.status === "paused" ? "继续招募" : "暂停收集"}</button>
         <label>
@@ -1309,6 +1388,10 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
             预计时长（分钟）
             <input name="duration_min" type="number" min="1" id="adminEditDuration" value="${experiment.duration_min || ""}" />
           </label>
+          <label id="adminEditSlotRequirementField">
+            预约时间段数量
+            <input name="schedule_slots_required" id="adminEditSlotRequirement" value="${experiment.schedule_slots_required || "=1"}" />
+          </label>
           <label>
             报酬
             <input name="reward" id="adminEditReward" value="${experiment.reward || ""}" />
@@ -1356,6 +1439,8 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
   const editDescription = panel.querySelector("#adminEditDescription");
   const editNotes = panel.querySelector("#adminEditNotes");
   const editDuration = panel.querySelector("#adminEditDuration");
+  const editSlotRequirement = panel.querySelector("#adminEditSlotRequirement");
+  const editSlotRequirementField = panel.querySelector("#adminEditSlotRequirementField");
   const editReward = panel.querySelector("#adminEditReward");
 
   if (editType) editType.value = experiment.type || "";
@@ -1379,6 +1464,10 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
   };
   syncEditLocationFields();
   editLocation?.addEventListener("change", syncEditLocationFields);
+
+  if (editSlotRequirementField) {
+    editSlotRequirementField.classList.toggle("hidden", experiment.schedule_required !== 1);
+  }
 
   if (deleteBtn) {
     deleteBtn.classList.toggle("hidden", experiment.status !== "paused");
@@ -1423,20 +1512,27 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
   });
 
   const loadScheduleFromSlots = (sourceSlots) => {
-    const editableSlots = sourceSlots
-      .filter((slot) => slot.locked === 0)
+    const allSlots = sourceSlots
       .map(convertSlotToSchedule)
       .filter(Boolean);
-    adminScheduleState.slots = editableSlots;
+    adminScheduleState.slots = allSlots;
     adminScheduleState.selectedIds.clear();
-    if (editableSlots.length > 0) {
-      adminScheduleState.weekStart = startOfWeek(new Date(`${editableSlots[0].date}T00:00:00`));
+    if (allSlots.length > 0) {
+      adminScheduleState.weekStart = startOfWeek(new Date(`${allSlots[0].date}T00:00:00`));
     }
     renderAdminEditScheduleGrid();
   };
 
   editScheduleRefresh?.addEventListener("click", async () => {
-    await loadAdminExperimentDetail(experiment.experiment_uid);
+    if (!editScheduleRefresh) return;
+    try {
+      editScheduleRefresh.disabled = true;
+      editScheduleRefresh.classList.add("loading");
+      await loadAdminExperimentDetail(experiment.experiment_uid);
+    } finally {
+      editScheduleRefresh.disabled = false;
+      editScheduleRefresh.classList.remove("loading");
+    }
   });
 
   editScheduleUp?.addEventListener("click", () => {
@@ -1486,6 +1582,7 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
           description: editDescription?.value || null,
           notes: editNotes?.value || null,
           duration_min: editDuration?.value || null,
+          schedule_slots_required: editSlotRequirement?.value || "=1",
           reward: editReward?.value || null,
         },
       });
@@ -1530,7 +1627,10 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
   });
 
   editScheduleSave.addEventListener("click", async () => {
+    if (!editScheduleSave) return;
     try {
+      editScheduleSave.disabled = true;
+      editScheduleSave.classList.add("loading");
       await apiRequest("/admin/experiment/update", {
         method: "POST",
         json: {
@@ -1542,6 +1642,9 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
       await loadAdminExperimentDetail(experiment.experiment_uid);
     } catch (error) {
       setStatus(adminExperimentStatus, error.message, true);
+    } finally {
+      editScheduleSave.disabled = false;
+      editScheduleSave.classList.remove("loading");
     }
   });
 
@@ -1665,8 +1768,9 @@ async function loadParticipantsForExperiment(experimentUid, list) {
     participants.forEach((participant) => {
       const item = document.createElement("div");
       item.className = "admin-participant-item";
+      const startText = participant.slot?.start_time ? formatSlotDateTime(participant.slot.start_time) : "-";
       item.innerHTML = `
-        <span>${participant.name} (${participant.user_uid})</span>
+        <span>${participant.name} (${participant.user_uid}) · ${startText}</span>
         <button type="button" class="ghost" data-action="feedback">添加评价</button>
       `;
       item.querySelector("[data-action='feedback']").addEventListener("click", async () => {
@@ -1715,7 +1819,7 @@ function renderExperimentSlots(exp, slots) {
     empty.textContent = "暂无可预约时间段";
     slotWrap.appendChild(empty);
     if (state.selectedExperimentUid === exp.experiment_uid) {
-      state.selectedSlotId = null;
+      state.selectedSlotIds.clear();
     }
     setStatus(experimentStatus, "暂无可预约时间段", true);
   } else {
@@ -1723,13 +1827,12 @@ function renderExperimentSlots(exp, slots) {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "ghost experiment-slot-btn";
-      if (state.selectedExperimentUid === exp.experiment_uid && String(state.selectedSlotId) === String(slot.id)) {
+      if (state.selectedExperimentUid === exp.experiment_uid && state.selectedSlotIds.has(String(slot.id))) {
         btn.classList.add("selected");
       }
       btn.textContent = `${formatSlotDateTime(slot.start_time)} - ${formatSlotTime(slot.end_time)}`;
       btn.addEventListener("click", () => {
-        setSelectedExperiment(exp, slot);
-        renderExperimentSlots(exp, slots);
+        toggleScheduleSlotSelection(exp, slot, slots);
       });
       slotWrap.appendChild(btn);
     });
@@ -1752,12 +1855,16 @@ function formatSlotDateTime(value) {
   return `${y}-${m}-${d} ${formatSlotTime(value)}`;
 }
 
-async function applyExperiment(exp, slot) {
+async function applyExperiment(exp, selectedSlots) {
   setStatus(experimentStatus, "提交中...");
   try {
+    const slotIds = Array.isArray(selectedSlots)
+      ? selectedSlots.map((slot) => slot.id)
+      : (selectedSlots?.id ? [selectedSlots.id] : []);
     const payload = {
       experiment_uid: exp.experiment_uid,
-      slot_id: slot?.id,
+      slot_ids: slotIds.length ? slotIds : undefined,
+      slot_id: slotIds.length === 1 ? slotIds[0] : undefined,
     };
     const data = await apiRequest("/experiments/apply", { method: "POST", json: payload });
     if (data.location === "在线" && data.location_link) {
@@ -1825,6 +1932,7 @@ locationSelect?.addEventListener("change", () => {
 
 scheduleRequired?.addEventListener("change", () => {
   scheduleEditor?.classList.toggle("hidden", scheduleRequired.value !== "yes");
+  scheduleSlotsRequiredField?.classList.toggle("hidden", scheduleRequired.value !== "yes");
 });
 
 schedulePrev?.addEventListener("click", () => {
@@ -2061,6 +2169,7 @@ adminExperimentForm?.addEventListener("submit", async (event) => {
       duration_min: payload.duration_min,
       reward: payload.reward,
       schedule_required: scheduleRequiredValue,
+      schedule_slots_required: scheduleRequiredValue ? payload.schedule_slots_required || "=1" : "=1",
       conditions_text: adminConditions.value,
       quotas_text: adminQuota.value,
       schedule_slots: schedulePayload,
@@ -2098,15 +2207,27 @@ experimentForm.addEventListener("submit", async (event) => {
     setStatus(experimentStatus, "未找到选中的实验", true);
     return;
   }
-  if (exp.schedule_required && !state.selectedSlotId) {
-    setStatus(experimentStatus, "请选择预约时间段", true);
-    return;
+  if (exp.schedule_required) {
+    const requirement = parseSlotRequirement(exp.schedule_slots_required || "=1");
+    const count = state.selectedSlotIds.size;
+    const meets =
+      (requirement.operator === "=" && count === requirement.count) ||
+      (requirement.operator === ">" && count > requirement.count) ||
+      (requirement.operator === ">=" && count >= requirement.count) ||
+      (requirement.operator === "<" && count < requirement.count) ||
+      (requirement.operator === "<=" && count <= requirement.count);
+    if (!meets) {
+      setStatus(experimentStatus, `请选择符合数量要求的时间段（${requirement.raw}）`, true);
+      return;
+    }
   }
+
   const slots = state.experimentSlots[exp.experiment_uid] || [];
-  const slot = exp.schedule_required
-    ? slots.find((item) => String(item.id) === String(state.selectedSlotId))
-    : null;
-  await applyExperiment(exp, slot || null);
+  const slotIds = exp.schedule_required
+    ? Array.from(state.selectedSlotIds)
+    : [];
+  const selectedSlots = slots.filter((item) => slotIds.includes(String(item.id)));
+  await applyExperiment(exp, exp.schedule_required ? selectedSlots : null);
 });
 
 logoutBtn.addEventListener("click", async () => {
@@ -2133,4 +2254,5 @@ if (window.matchMedia && window.matchMedia("(orientation: portrait)").matches) {
 }
 
 scheduleEditor?.classList.toggle("hidden", scheduleRequired?.value !== "yes");
+scheduleSlotsRequiredField?.classList.toggle("hidden", scheduleRequired?.value !== "yes");
 locationSelect?.dispatchEvent(new Event("change"));
