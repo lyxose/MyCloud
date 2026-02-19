@@ -132,6 +132,14 @@ main {
     width: 30vw;
     min-width: 96px;
   }
+
+  main {
+    padding: 0 1rem;
+  }
+
+  .card {
+    padding: 2rem 1.5rem;
+  }
 }
 
 .card {

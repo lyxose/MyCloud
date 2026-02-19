@@ -149,7 +149,7 @@ async function apiRequest(path, options = {}) {
   const contentType = response.headers.get("content-type") || "";
   const data = contentType.includes("application/json") ? await response.json() : await response.text();
   if (!response.ok) {
-    const message = data?.error || data || "请求失败";
+    const message = data?.detail ? `${data.error || "请求失败"}: ${data.detail}` : (data?.error || data || "请求失败");
     throw new Error(message);
   }
   return data;
@@ -266,6 +266,7 @@ const scheduleState = {
   activeDayIndex: 0,
   viewStartMin: VIEW_START_DEFAULT,
   viewEndMin: VIEW_END_DEFAULT,
+  scrollLeft: 0,
 };
 
 function startOfWeek(date) {
@@ -358,12 +359,20 @@ function buildWeekDates(startDate) {
 
 function renderScheduleGrid() {
   if (!scheduleGrid) return;
+  const existingDays = scheduleGrid.querySelector(".schedule-days");
+  if (existingDays) {
+    scheduleState.scrollLeft = existingDays.scrollLeft;
+  }
   scheduleGrid.innerHTML = "";
   const days = buildWeekDates(scheduleState.weekStart);
   scheduleTitle.textContent = `${days[0].getMonth() + 1}/${days[0].getDate()} - ${days[6].getMonth() + 1}/${days[6].getDate()}`;
   const timeColumn = buildTimeColumn(scheduleState);
   const daysContainer = document.createElement("div");
   daysContainer.className = "schedule-days";
+  daysContainer.scrollLeft = scheduleState.scrollLeft || 0;
+  daysContainer.addEventListener("scroll", () => {
+    scheduleState.scrollLeft = daysContainer.scrollLeft;
+  }, { passive: true });
 
   scheduleGrid.appendChild(timeColumn);
   scheduleGrid.appendChild(daysContainer);
@@ -454,18 +463,38 @@ function renderScheduleGrid() {
         if (slot.locked) {
           slotEl.classList.add("locked");
         }
+        const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+        const isExpired = isDateBeforeToday(date)
+          || (date.toDateString() === new Date().toDateString() && slot.endMin <= nowMin);
+        if (isExpired) {
+          slotEl.classList.add("expired");
+        }
+        if (slot.locked) {
+          slotEl.classList.add("locked");
+        }
         if (scheduleState.selectedIds.has(slot.id)) {
           slotEl.classList.add("selected");
         }
-        slotEl.style.top = `${slot.startMin * PX_PER_MIN}px`;
-        slotEl.style.height = `${(slot.endMin - slot.startMin) * PX_PER_MIN}px`;
-        slotEl.dataset.id = slot.id;
         if (slot.locked) {
           const names = (slot.participants || []).map((p) => p.name).join("、") || "已预约";
           slotEl.innerHTML = `
             <div class="slot-time">
               <span class="slot-time-start">${formatMinutes(slot.startMin)}</span>
               <span class="slot-time-end">${formatMinutes(slot.endMin)}</span>
+            </div>
+            <div class="slot-count">${names}</div>
+          `;
+        } else {
+          slotEl.innerHTML = `
+            <div class="slot-time">
+              <span class="slot-time-start">${formatMinutes(slot.startMin)}</span>
+              <span class="slot-time-end">${formatMinutes(slot.endMin)}</span>
+            </div>
+            <div class="slot-count">${slot.capacity}人</div>
+            <div class="slot-handle top">▲</div>
+            <div class="slot-handle bottom">▼</div>
+          `;
+        }
             </div>
             <div class="slot-count">${names}</div>
           `;
@@ -704,7 +733,7 @@ function attachMobileSlotHandlers(slotEl, slot, stateRef, renderFn, onDelete, on
         },
       ]);
     }, 500);
-  });
+  }, { passive: true });
 
   slotEl.addEventListener("touchmove", (event) => {
     if (!pressTimer) return;
@@ -716,7 +745,7 @@ function attachMobileSlotHandlers(slotEl, slot, stateRef, renderFn, onDelete, on
       moved = true;
       cancelPress();
     }
-  });
+  }, { passive: true });
 
   slotEl.addEventListener("touchend", (event) => {
     cancelPress();
@@ -731,7 +760,7 @@ function attachMobileSlotHandlers(slotEl, slot, stateRef, renderFn, onDelete, on
     }
     stateRef.selectedIds = new Set([slot.id]);
     renderFn();
-  });
+  }, { passive: true });
 }
 
 function enableSlotDrag(slotEl, slot, stateRef, renderFn) {
@@ -776,28 +805,6 @@ function enableSlotDrag(slotEl, slot, stateRef, renderFn) {
     document.addEventListener("mouseup", onUp);
   });
 
-  let pressTimer = null;
-  slotEl.addEventListener("touchstart", (event) => {
-    if (event.touches.length !== 1) return;
-    pressTimer = setTimeout(() => {
-      dragging = true;
-      startY = event.touches[0].clientY;
-      startMin = slot.startMin;
-      endMin = slot.endMin;
-    }, 350);
-  });
-
-  slotEl.addEventListener("touchmove", (event) => {
-    if (!dragging) return;
-    const fakeEvent = { clientY: event.touches[0].clientY };
-    onMove(fakeEvent);
-    event.preventDefault();
-  }, { passive: false });
-
-  slotEl.addEventListener("touchend", () => {
-    if (pressTimer) clearTimeout(pressTimer);
-    if (dragging) onUp();
-  });
 }
 
 function enableSlotResize(slotEl, slot, renderFn, stateRef) {
@@ -861,27 +868,6 @@ function enableSlotResize(slotEl, slot, renderFn, stateRef) {
       document.addEventListener("mouseup", onUp);
     });
 
-    handle.addEventListener("touchstart", (event) => {
-      event.stopPropagation();
-      const body = slotEl.closest(".schedule-day-body");
-      if (!body) return;
-      resizeContext = {
-        bodyTop: body.getBoundingClientRect().top,
-        viewOffset: getViewOffsetPx(stateRef),
-      };
-      resizing = edge;
-    });
-
-    handle.addEventListener("touchmove", (event) => {
-      if (!resizing) return;
-      handleResize(event.touches[0].clientY);
-      event.preventDefault();
-    }, { passive: false });
-
-    handle.addEventListener("touchend", () => {
-      resizing = null;
-      resizeContext = null;
-    });
   };
 
   bindHandle(topHandle, "top");
@@ -965,11 +951,16 @@ const adminScheduleState = {
   activeDayIndex: 0,
   viewStartMin: VIEW_START_DEFAULT,
   viewEndMin: VIEW_END_DEFAULT,
+  scrollLeft: 0,
 };
 
 function renderAdminEditScheduleGrid() {
   const container = document.getElementById("adminEditScheduleGrid");
   if (!container) return;
+  const existingDays = container.querySelector(".schedule-days");
+  if (existingDays) {
+    adminScheduleState.scrollLeft = existingDays.scrollLeft;
+  }
   container.innerHTML = "";
   const days = buildWeekDates(adminScheduleState.weekStart);
 
@@ -981,6 +972,10 @@ function renderAdminEditScheduleGrid() {
   const timeColumn = buildTimeColumn(adminScheduleState);
   const daysContainer = document.createElement("div");
   daysContainer.className = "schedule-days";
+  daysContainer.scrollLeft = adminScheduleState.scrollLeft || 0;
+  daysContainer.addEventListener("scroll", () => {
+    adminScheduleState.scrollLeft = daysContainer.scrollLeft;
+  }, { passive: true });
   container.appendChild(timeColumn);
   container.appendChild(daysContainer);
 
@@ -1225,28 +1220,6 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
     document.addEventListener("mouseup", onUp);
   });
 
-  let pressTimer = null;
-  slotEl.addEventListener("touchstart", (event) => {
-    if (event.touches.length !== 1) return;
-    pressTimer = setTimeout(() => {
-      dragging = true;
-      startY = event.touches[0].clientY;
-      startMin = slot.startMin;
-      endMin = slot.endMin;
-    }, 350);
-  });
-
-  slotEl.addEventListener("touchmove", (event) => {
-    if (!dragging) return;
-    const fakeEvent = { clientY: event.touches[0].clientY };
-    onMove(fakeEvent);
-    event.preventDefault();
-  }, { passive: false });
-
-  slotEl.addEventListener("touchend", () => {
-    if (pressTimer) clearTimeout(pressTimer);
-    if (dragging) onUp();
-  });
 }
 
 function buildAdminSchedulePayload() {
