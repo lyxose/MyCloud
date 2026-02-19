@@ -132,14 +132,6 @@ main {
     width: 30vw;
     min-width: 96px;
   }
-
-  main {
-    padding: 0 1rem;
-  }
-
-  .card {
-    padding: 2rem 1.5rem;
-  }
 }
 
 .card {
@@ -885,5 +877,9 @@ body.is-admin .split {
     padding-top: 2.5rem;
     gap: 0rem;
     padding-top:0rem;
+  }
+
+  main {
+    padding: 0 1rem;
   }
 }
