@@ -164,6 +164,7 @@ function setProfilePaneCollapsed(collapsed) {
 
 function applyRoleLayout() {
   const isAdmin = state.role === "admin" || state.role === "root";
+  document.body.classList.toggle("is-admin", isAdmin);
   profilePane?.classList.toggle("hidden", isAdmin);
   experimentForm?.classList.toggle("hidden", isAdmin);
   profileSplit?.classList.toggle("hidden", isAdmin);
@@ -248,7 +249,7 @@ function renderProfile() {
   }
 }
 
-const PX_PER_MIN = 2;
+const PX_PER_MIN = 4 / 3;
 let capacityBuffer = "";
 let capacityTimer = null;
 
@@ -289,6 +290,7 @@ function buildTimeColumn(stateRef) {
   body.className = "schedule-day-body schedule-time-body";
   const timeline = document.createElement("div");
   timeline.className = "schedule-timeline";
+  timeline.style.height = `${1440 * PX_PER_MIN}px`;
   for (let hour = 0; hour <= 24; hour += 1) {
     const hourLine = document.createElement("div");
     hourLine.className = "schedule-hour";
@@ -353,8 +355,12 @@ function renderScheduleGrid() {
   scheduleGrid.innerHTML = "";
   const days = buildWeekDates(scheduleState.weekStart);
   scheduleTitle.textContent = `${days[0].getMonth() + 1}/${days[0].getDate()} - ${days[6].getMonth() + 1}/${days[6].getDate()}`;
+  const timeColumn = buildTimeColumn(scheduleState);
+  const daysContainer = document.createElement("div");
+  daysContainer.className = "schedule-days";
 
-  scheduleGrid.appendChild(buildTimeColumn(scheduleState));
+  scheduleGrid.appendChild(timeColumn);
+  scheduleGrid.appendChild(daysContainer);
 
   days.forEach((date, index) => {
     const dayEl = document.createElement("div");
@@ -373,6 +379,7 @@ function renderScheduleGrid() {
     const timeline = document.createElement("div");
     timeline.className = "schedule-timeline";
     timeline.dataset.date = formatLocalDate(date);
+    timeline.style.height = `${1440 * PX_PER_MIN}px`;
 
     for (let hour = 0; hour <= 24; hour += 1) {
       const hourLine = document.createElement("div");
@@ -472,7 +479,7 @@ function renderScheduleGrid() {
     body.appendChild(timeline);
     dayEl.appendChild(header);
     dayEl.appendChild(body);
-    scheduleGrid.appendChild(dayEl);
+    daysContainer.appendChild(dayEl);
   });
 }
 
@@ -738,7 +745,11 @@ function renderAdminEditScheduleGrid() {
     title.textContent = `${days[0].getMonth() + 1}/${days[0].getDate()} - ${days[6].getMonth() + 1}/${days[6].getDate()}`;
   }
 
-  container.appendChild(buildTimeColumn(adminScheduleState));
+  const timeColumn = buildTimeColumn(adminScheduleState);
+  const daysContainer = document.createElement("div");
+  daysContainer.className = "schedule-days";
+  container.appendChild(timeColumn);
+  container.appendChild(daysContainer);
 
   days.forEach((date, index) => {
     const dayEl = document.createElement("div");
@@ -757,6 +768,7 @@ function renderAdminEditScheduleGrid() {
     const timeline = document.createElement("div");
     timeline.className = "schedule-timeline";
     timeline.dataset.date = formatLocalDate(date);
+    timeline.style.height = `${1440 * PX_PER_MIN}px`;
 
     for (let hour = 0; hour <= 24; hour += 1) {
       const hourLine = document.createElement("div");
@@ -846,7 +858,7 @@ function renderAdminEditScheduleGrid() {
     body.appendChild(timeline);
     dayEl.appendChild(header);
     dayEl.appendChild(body);
-    container.appendChild(dayEl);
+    daysContainer.appendChild(dayEl);
   });
 }
 

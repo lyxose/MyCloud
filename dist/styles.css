@@ -10,6 +10,7 @@
   --card: #ffffff;
   --shadow: rgba(30, 60, 100, 0.12);
   --ring: rgba(58, 123, 213, 0.28);
+  --time-col-width: 32px;
 }
 
 * {
@@ -491,13 +492,20 @@ textarea:focus {
 }
 
 .schedule-grid {
+  display: flex;
+  gap: 0.4rem;
+  overflow: hidden;
+  position: relative;
+}
+
+.schedule-days {
   display: grid;
-  grid-template-columns: 56px repeat(7, minmax(150px, 1fr));
+  grid-template-columns: repeat(7, minmax(140px, 1fr));
   column-gap: 0.4rem;
   row-gap: 0.6rem;
   overflow-x: auto;
   overflow-y: hidden;
-  position: relative;
+  width: 100%;
 }
 
 .schedule-grid.no-time {
@@ -508,13 +516,15 @@ textarea:focus {
   position: sticky;
   left: 0;
   z-index: 2;
-  min-width: 56px;
+  min-width: var(--time-col-width);
   background: #d6e3f5;
   border: 1px solid rgba(58, 123, 213, 0.2);
 }
 
 .schedule-time .schedule-day-header {
   text-align: center;
+  font-size: 0.95rem;
+  font-weight: 700;
 }
 
 .schedule-time-body {
@@ -527,7 +537,7 @@ textarea:focus {
   border: 1px solid rgba(58, 123, 213, 0.2);
   display: flex;
   flex-direction: column;
-  min-width: 160px;
+  min-width: 140px;
 }
 
 .schedule-day-header {
@@ -557,11 +567,23 @@ textarea:focus {
   position: absolute;
   left: 0;
   right: 0;
-  height: 60px;
+  height: 40px;
   border-top: 1px dashed rgba(58, 123, 213, 0.15);
-  font-size: 0.85rem;
-  color: #3a4f6b;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #2d4464;
   text-align: center;
+}
+
+.schedule-time .schedule-hour {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+body.is-admin #profilePane,
+body.is-admin #experimentForm,
+body.is-admin .split {
+  display: none;
 }
 
 .schedule-slot {
