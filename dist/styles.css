@@ -39,9 +39,6 @@ main {
   padding: 0 2rem;
 }
 
-.bg-orbit {
-  /* removed for cleaner UI */
-}
 
 .site-header {
   position: relative;
@@ -500,7 +497,7 @@ textarea:focus {
 
 .schedule-days {
   display: grid;
-  grid-template-columns: repeat(7, minmax(100px, 1fr));
+  grid-template-columns: repeat(var(--day-count, 7), minmax(100px, 1fr));
   column-gap: 0.4rem;
   row-gap: 0.6rem;
   overflow-x: auto;

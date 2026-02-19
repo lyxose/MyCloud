@@ -268,6 +268,8 @@ const scheduleState = {
   slots: [],
   selectedIds: new Set(),
   activeDayIndex: 0,
+  dayCount: 7,
+  autoStart: true,
   viewStartMin: VIEW_START_DEFAULT,
   viewEndMin: VIEW_END_DEFAULT,
 };
@@ -279,6 +281,16 @@ function startOfWeek(date) {
   d.setDate(d.getDate() + diff);
   d.setHours(0, 0, 0, 0);
   return d;
+}
+
+function startOfDay(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function normalizeStartDate(date, dayCount) {
+  return dayCount < 7 ? startOfDay(date) : startOfWeek(date);
 }
 
 function isDateBeforeToday(date) {
@@ -350,9 +362,9 @@ function shiftViewWindow(stateRef, deltaMin, renderFn) {
   renderFn();
 }
 
-function buildWeekDates(startDate) {
+function buildWeekDates(startDate, count = 7) {
   const days = [];
-  for (let i = 0; i < 7; i += 1) {
+  for (let i = 0; i < count; i += 1) {
     const d = new Date(startDate);
     d.setDate(d.getDate() + i);
     days.push(d);
@@ -360,16 +372,41 @@ function buildWeekDates(startDate) {
   return days;
 }
 
+function getDayColumnCount(gridEl) {
+  if (!gridEl) return 7;
+  const rootStyles = getComputedStyle(document.documentElement);
+  const timeWidth = Number(rootStyles.getPropertyValue("--time-col-width").replace("px", "")) || 32;
+  const available = Math.max(0, gridEl.clientWidth - timeWidth - 12);
+  const minDayWidth = 140;
+  const count = Math.floor(available / minDayWidth);
+  return Math.max(1, Math.min(7, count || 1));
+}
+
+function getDayStep(count) {
+  return Math.max(1, Math.ceil(count / 2));
+}
+
 function renderScheduleGrid() {
   if (!scheduleGrid) return;
   const prevDays = scheduleGrid.querySelector(".schedule-days");
   if (prevDays) scheduleScrollState.schedule = prevDays.scrollLeft;
   scheduleGrid.innerHTML = "";
-  const days = buildWeekDates(scheduleState.weekStart);
-  scheduleTitle.textContent = `${days[0].getMonth() + 1}/${days[0].getDate()} - ${days[6].getMonth() + 1}/${days[6].getDate()}`;
+  const dayCount = getDayColumnCount(scheduleGrid);
+  if (scheduleState.dayCount !== dayCount) {
+    scheduleState.dayCount = dayCount;
+    if (scheduleState.autoStart) {
+      scheduleState.weekStart = normalizeStartDate(new Date(), dayCount);
+    }
+    if (scheduleState.activeDayIndex >= dayCount) scheduleState.activeDayIndex = 0;
+  }
+  const days = buildWeekDates(scheduleState.weekStart, dayCount);
+  const lastDay = days[days.length - 1];
+  scheduleTitle.textContent = `${days[0].getMonth() + 1}/${days[0].getDate()} - ${lastDay.getMonth() + 1}/${lastDay.getDate()}`;
   const timeColumn = buildTimeColumn(scheduleState);
   const daysContainer = document.createElement("div");
   daysContainer.className = "schedule-days";
+  daysContainer.style.setProperty("--day-count", String(dayCount));
+  daysContainer.style.gridTemplateColumns = `repeat(${dayCount}, minmax(100px, 1fr))`;
 
   scheduleGrid.appendChild(timeColumn);
   scheduleGrid.appendChild(daysContainer);
@@ -997,6 +1034,8 @@ const adminScheduleState = {
   slots: [],
   selectedIds: new Set(),
   activeDayIndex: 0,
+  dayCount: 7,
+  autoStart: true,
   viewStartMin: VIEW_START_DEFAULT,
   viewEndMin: VIEW_END_DEFAULT,
 };
@@ -1007,16 +1046,27 @@ function renderAdminEditScheduleGrid() {
   const prevDays = container.querySelector(".schedule-days");
   if (prevDays) scheduleScrollState.admin = prevDays.scrollLeft;
   container.innerHTML = "";
-  const days = buildWeekDates(adminScheduleState.weekStart);
+  const dayCount = getDayColumnCount(container);
+  if (adminScheduleState.dayCount !== dayCount) {
+    adminScheduleState.dayCount = dayCount;
+    if (adminScheduleState.autoStart) {
+      adminScheduleState.weekStart = normalizeStartDate(new Date(), dayCount);
+    }
+    if (adminScheduleState.activeDayIndex >= dayCount) adminScheduleState.activeDayIndex = 0;
+  }
+  const days = buildWeekDates(adminScheduleState.weekStart, dayCount);
 
   const title = document.getElementById("adminEditScheduleTitle");
   if (title && days.length) {
-    title.textContent = `${days[0].getMonth() + 1}/${days[0].getDate()} - ${days[6].getMonth() + 1}/${days[6].getDate()}`;
+    const lastDay = days[days.length - 1];
+    title.textContent = `${days[0].getMonth() + 1}/${days[0].getDate()} - ${lastDay.getMonth() + 1}/${lastDay.getDate()}`;
   }
 
   const timeColumn = buildTimeColumn(adminScheduleState);
   const daysContainer = document.createElement("div");
   daysContainer.className = "schedule-days";
+  daysContainer.style.setProperty("--day-count", String(dayCount));
+  daysContainer.style.gridTemplateColumns = `repeat(${dayCount}, minmax(100px, 1fr))`;
   container.appendChild(timeColumn);
   container.appendChild(daysContainer);
   daysContainer.scrollLeft = scheduleScrollState.admin;
@@ -1839,7 +1889,11 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
     adminScheduleState.slots = allSlots;
     adminScheduleState.selectedIds.clear();
     if (allSlots.length > 0) {
-      adminScheduleState.weekStart = startOfWeek(new Date(`${allSlots[0].date}T00:00:00`));
+      adminScheduleState.weekStart = normalizeStartDate(
+        new Date(`${allSlots[0].date}T00:00:00`),
+        adminScheduleState.dayCount
+      );
+      adminScheduleState.autoStart = false;
     }
     renderAdminEditScheduleGrid();
   };
@@ -1932,18 +1986,20 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
   });
 
   editSchedulePrev?.addEventListener("click", () => {
-    const todayStart = startOfWeek(new Date());
+    const todayStart = normalizeStartDate(new Date(), adminScheduleState.dayCount);
     const next = new Date(adminScheduleState.weekStart);
-    next.setDate(next.getDate() - 7);
+    next.setDate(next.getDate() - getDayStep(adminScheduleState.dayCount));
     if (next < todayStart) return;
     adminScheduleState.weekStart = next;
+    adminScheduleState.autoStart = false;
     renderAdminEditScheduleGrid();
   });
 
   editScheduleNext?.addEventListener("click", () => {
     const next = new Date(adminScheduleState.weekStart);
-    next.setDate(next.getDate() + 7);
+    next.setDate(next.getDate() + getDayStep(adminScheduleState.dayCount));
     adminScheduleState.weekStart = next;
+    adminScheduleState.autoStart = false;
     renderAdminEditScheduleGrid();
   });
 
@@ -2257,18 +2313,20 @@ scheduleRequired?.addEventListener("change", () => {
 });
 
 schedulePrev?.addEventListener("click", () => {
-  const todayStart = startOfWeek(new Date());
+  const todayStart = normalizeStartDate(new Date(), scheduleState.dayCount);
   const next = new Date(scheduleState.weekStart);
-  next.setDate(next.getDate() - 7);
+  next.setDate(next.getDate() - getDayStep(scheduleState.dayCount));
   if (next < todayStart) return;
   scheduleState.weekStart = next;
+  scheduleState.autoStart = false;
   renderScheduleGrid();
 });
 
 scheduleNext?.addEventListener("click", () => {
   const next = new Date(scheduleState.weekStart);
-  next.setDate(next.getDate() + 7);
+  next.setDate(next.getDate() + getDayStep(scheduleState.dayCount));
   scheduleState.weekStart = next;
+  scheduleState.autoStart = false;
   renderScheduleGrid();
 });
 
