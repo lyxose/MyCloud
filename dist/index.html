@@ -172,6 +172,17 @@
                 <input name="unit" required />
               </label>
               <label>
+                职业
+                <select name="occupation">
+                  <option value="">请选择</option>
+                  <option value="学生">学生</option>
+                  <option value="在职">在职</option>
+                  <option value="待业">待业</option>
+                  <option value="退休">退休</option>
+                  <option value="其他">其他</option>
+                </select>
+              </label>
+              <label>
                 微信号
                 <input name="wechat" />
               </label>
@@ -362,6 +373,21 @@
                       实验链接
                       <input name="location_link" />
                     </label>
+                    <label id="accessControlModeField" class="hidden">
+                      在线访问控制
+                      <select name="access_control_mode" id="accessControlMode">
+                        <option value="none">否（原链接）</option>
+                        <option value="proxy">是（反向代理）</option>
+                        <option value="token">是（拼接令牌）</option>
+                      </select>
+                      <span class="hint" title="反向代理：隐藏原链接，但不适合频繁和源传输数据的动态网页；拼接令牌：需要在实验页面 head 添加脚本校验 token；原链接：被试可随时访问。">悬停查看说明</span>
+                    </label>
+                    <fieldset class="checkbox-group" id="allowedDevicesField">
+                      <legend>允许设备</legend>
+                      <label><input type="checkbox" name="allowed_devices" value="desktop" checked />电脑</label>
+                      <label><input type="checkbox" name="allowed_devices" value="tablet" checked />平板</label>
+                      <label><input type="checkbox" name="allowed_devices" value="mobile" checked />手机</label>
+                    </fieldset>
                     <label>
                       内容简介
                       <textarea name="description" rows="3"></textarea>

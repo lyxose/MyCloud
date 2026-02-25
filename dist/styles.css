@@ -200,6 +200,28 @@ label.consent-check {
   gap: 0.6rem;
 }
 
+fieldset.checkbox-group {
+  border: 1px solid #c9d6ea;
+  border-radius: 12px;
+  padding: 0.75rem 0.9rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1rem;
+}
+
+fieldset.checkbox-group legend {
+  padding: 0 0.4rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+fieldset.checkbox-group label {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+}
+
 input,
 select,
 textarea {

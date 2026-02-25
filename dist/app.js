@@ -114,6 +114,9 @@ const scheduleSlotsRequired = document.getElementById("scheduleSlotsRequired");
 const locationSelect = document.getElementById("locationSelect");
 const locationLinkField = document.getElementById("locationLinkField");
 const locationCustomField = document.getElementById("locationCustomField");
+const accessControlModeField = document.getElementById("accessControlModeField");
+const accessControlMode = document.getElementById("accessControlMode");
+const allowedDevicesField = document.getElementById("allowedDevicesField");
 
 const adminExperimentsSection = document.getElementById("adminExperiments");
 const adminExperimentList = document.getElementById("adminExperimentList");
@@ -132,6 +135,20 @@ function setStatus(el, text, isError = false) {
 function toJsonForm(form) {
   const data = new FormData(form);
   return Object.fromEntries(data.entries());
+}
+
+function safeJsonParse(value, fallback) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+function getCheckedValues(form, name) {
+  if (!form) return [];
+  return Array.from(form.querySelectorAll(`input[name="${name}"]:checked`))
+    .map((input) => input.value);
 }
 
 async function apiRequest(path, options = {}) {
@@ -191,6 +208,7 @@ function populateProfileForm(profile) {
   const mapping = {
     alipay_phone: profile.alipay_phone,
     unit: profile.unit,
+    occupation: profile.occupation,
     wechat: profile.wechat,
     region: profile.region,
     handedness: profile.handedness,
@@ -1804,6 +1822,21 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
             实验链接
             <input name="location_link" id="adminEditLocationLink" value="${experiment.location_link || ""}" />
           </label>
+          <label id="adminEditAccessControlModeField" class="hidden">
+            在线访问控制
+            <select name="access_control_mode" id="adminEditAccessControlMode">
+              <option value="none">否（原链接）</option>
+              <option value="proxy">是（反向代理）</option>
+              <option value="token">是（拼接令牌）</option>
+            </select>
+            <span class="hint" title="反向代理：隐藏原链接，但不适合频繁和源传输数据的动态网页；拼接令牌：需要在实验页面 head 添加脚本校验 token；原链接：被试可随时访问。">悬停查看说明</span>
+          </label>
+          <fieldset class="checkbox-group" id="adminEditAllowedDevices">
+            <legend>允许设备</legend>
+            <label><input type="checkbox" name="allowed_devices" value="desktop" />电脑</label>
+            <label><input type="checkbox" name="allowed_devices" value="tablet" />平板</label>
+            <label><input type="checkbox" name="allowed_devices" value="mobile" />手机</label>
+          </fieldset>
           <label>
             内容简介
             <textarea name="description" rows="3" id="adminEditDescription">${experiment.description || ""}</textarea>
@@ -1863,6 +1896,9 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
   const editLocationCustomField = panel.querySelector("#adminEditLocationCustomField");
   const editLocationLink = panel.querySelector("#adminEditLocationLink");
   const editLocationLinkField = panel.querySelector("#adminEditLocationLinkField");
+  const editAccessControlMode = panel.querySelector("#adminEditAccessControlMode");
+  const editAccessControlModeField = panel.querySelector("#adminEditAccessControlModeField");
+  const editAllowedDevices = panel.querySelector("#adminEditAllowedDevices");
   const editContactPhone = panel.querySelector("#adminEditContactPhone");
   const editDescription = panel.querySelector("#adminEditDescription");
   const editNotes = panel.querySelector("#adminEditNotes");
@@ -1889,9 +1925,23 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
     const isCustom = editLocation.value === "其他";
     editLocationLinkField?.classList.toggle("hidden", !isOnline);
     editLocationCustomField?.classList.toggle("hidden", !isCustom);
+    editAccessControlModeField?.classList.toggle("hidden", !isOnline);
+    if (!isOnline && editAccessControlMode) {
+      editAccessControlMode.value = "none";
+    }
   };
   syncEditLocationFields();
   editLocation?.addEventListener("change", syncEditLocationFields);
+
+  if (editAccessControlMode) {
+    editAccessControlMode.value = experiment.access_control_mode || "none";
+  }
+  if (editAllowedDevices) {
+    const allowed = new Set(safeJsonParse(experiment.allowed_devices_json, ["desktop", "tablet", "mobile"]));
+    editAllowedDevices.querySelectorAll("input[type='checkbox']").forEach((input) => {
+      input.checked = allowed.has(input.value);
+    });
+  }
 
   if (editSlotRequirementField) {
     editSlotRequirementField.classList.toggle("hidden", experiment.schedule_required !== 1);
@@ -2003,6 +2053,7 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
         setStatus(adminExperimentStatus, "请填写实验地点", true);
         return;
       }
+      const allowedDevices = getCheckedValues(panel, "allowed_devices");
       await apiRequest("/admin/experiment/update", {
         method: "POST",
         json: {
@@ -2016,6 +2067,8 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
           duration_min: editDuration?.value || null,
           schedule_slots_required: editSlotRequirement?.value || "=1",
           reward: editReward?.value || null,
+          access_control_mode: editAccessControlMode?.value || "none",
+          allowed_devices: allowedDevices,
         },
       });
       setStatus(adminExperimentStatus, "实验信息已保存");
@@ -2302,9 +2355,33 @@ async function applyExperiment(exp, selectedSlots) {
       slot_id: slotIds.length === 1 ? slotIds[0] : undefined,
     };
     const data = await apiRequest("/experiments/apply", { method: "POST", json: payload });
-    if (data.location === "在线" && data.location_link) {
-      setStatus(experimentStatus, "报名成功，正在跳转实验链接...");
-      window.open(data.location_link, "_blank");
+    if (data.location === "在线" && (data.access_url || data.location_link)) {
+      const link = data.access_url || data.location_link;
+      let deviceOk = data.device_allowed;
+      if (deviceOk === undefined && data.access_control_mode !== "none") {
+        try {
+          const check = await apiRequest("/experiments/access-check", {
+            method: "POST",
+            json: { experiment_uid: exp.experiment_uid },
+          });
+          deviceOk = check.device_ok;
+        } catch (error) {
+          deviceOk = true;
+        }
+      }
+      if (data.access_control_mode !== "none" && deviceOk === false) {
+        const message = "报名成功，但当前设备不符合要求。链接已准备，请在符合要求的设备上打开。";
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(link);
+          setStatus(experimentStatus, `${message} 已复制链接到剪贴板。`);
+        } else {
+          window.prompt("复制并在合适设备打开", link);
+          setStatus(experimentStatus, message);
+        }
+      } else {
+        setStatus(experimentStatus, "报名成功，正在跳转实验链接...");
+        window.open(link, "_blank");
+      }
     } else {
       const contact = data.contact_phone ? `主试联系方式：${data.contact_phone}` : "请联系主试确认信息";
       setStatus(experimentStatus, `报名成功，${contact}`);
@@ -2362,6 +2439,10 @@ locationSelect?.addEventListener("change", () => {
   locationLinkField?.classList.toggle("hidden", !isOnline);
   const isCustom = locationSelect.value === "其他";
   locationCustomField?.classList.toggle("hidden", !isCustom);
+  accessControlModeField?.classList.toggle("hidden", !isOnline);
+  if (!isOnline && accessControlMode) {
+    accessControlMode.value = "none";
+  }
 });
 
 scheduleRequired?.addEventListener("change", () => {
@@ -2614,6 +2695,8 @@ adminExperimentForm?.addEventListener("submit", async (event) => {
 
     const scheduleRequiredValue = payload.schedule_required === "yes";
     const schedulePayload = scheduleRequiredValue ? buildSchedulePayload() : [];
+    const allowedDevices = getCheckedValues(adminExperimentForm, "allowed_devices");
+    const accessMode = location === "在线" ? (payload.access_control_mode || "none") : "none";
     const requestPayload = {
       contact_phone: payload.contact_phone,
       name: payload.name,
@@ -2629,6 +2712,8 @@ adminExperimentForm?.addEventListener("submit", async (event) => {
       conditions_text: adminConditions.value,
       quotas_text: adminQuota.value,
       schedule_slots: schedulePayload,
+      access_control_mode: accessMode,
+      allowed_devices: allowedDevices,
       device_info: navigator.platform || "",
       browser_info: navigator.userAgent || "",
     };
