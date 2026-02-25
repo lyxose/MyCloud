@@ -803,6 +803,31 @@ body.is-admin .split {
   align-items: stretch;
 }
 
+@media (min-width: 900px) {
+  .split {
+    grid-template-columns: minmax(320px, 1.2fr) minmax(280px, 0.9fr);
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "profile experiment"
+      "profile applied";
+  }
+
+  #profilePane {
+    grid-area: profile;
+    min-height: 0;
+  }
+
+  #experimentForm {
+    grid-area: experiment;
+    min-height: 0;
+  }
+
+  #appliedExperimentsPanel {
+    grid-area: applied;
+    min-height: 0;
+  }
+}
+
 .inline-two {
   grid-column: 1 / -1;
   display: grid;
