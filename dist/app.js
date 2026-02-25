@@ -116,6 +116,7 @@ const locationLinkField = document.getElementById("locationLinkField");
 const locationCustomField = document.getElementById("locationCustomField");
 const accessControlModeField = document.getElementById("accessControlModeField");
 const accessControlMode = document.getElementById("accessControlMode");
+const accessControlHint = document.getElementById("accessControlHint");
 const allowedDevicesField = document.getElementById("allowedDevicesField");
 
 const adminExperimentsSection = document.getElementById("adminExperiments");
@@ -149,6 +150,14 @@ function getCheckedValues(form, name) {
   if (!form) return [];
   return Array.from(form.querySelectorAll(`input[name="${name}"]:checked`))
     .map((input) => input.value);
+}
+
+function updateAccessControlHint(selectEl, hintEl) {
+  if (!selectEl || !hintEl) return;
+  const option = selectEl.options[selectEl.selectedIndex];
+  const hint = option?.dataset?.hint || "";
+  hintEl.textContent = hint;
+  selectEl.title = hint;
 }
 
 async function apiRequest(path, options = {}) {
@@ -404,6 +413,16 @@ function getDayColumnCount(gridEl) {
 
 function getDayStep(count) {
   return Math.max(1, Math.ceil(count / 2));
+}
+
+function getAdminEarliestSlotDate() {
+  let earliest = null;
+  adminScheduleState.slots.forEach((slot) => {
+    if (!slot.date) return;
+    const d = startOfDay(new Date(`${slot.date}T00:00:00`));
+    if (!earliest || d < earliest) earliest = d;
+  });
+  return earliest;
 }
 
 let scheduleResizeObserver = null;
@@ -1825,11 +1844,11 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
           <label id="adminEditAccessControlModeField" class="hidden">
             在线访问控制
             <select name="access_control_mode" id="adminEditAccessControlMode">
-              <option value="none">否（原链接）</option>
-              <option value="proxy">是（反向代理）</option>
-              <option value="token">是（拼接令牌）</option>
+              <option value="none" data-hint="原链接：直接呈现/跳转原链接，被试将能在任意时刻/设备访问该链接。">否（原链接）</option>
+              <option value="proxy" data-hint="反向代理：隐藏原链接，但不适合频繁和源传输数据的动态网页。">是（反向代理）</option>
+              <option value="token" data-hint="拼接令牌：需要在实验页面 head 添加脚本校验 token。">是（拼接令牌）</option>
             </select>
-            <span class="hint" title="反向代理：隐藏原链接，但不适合频繁和源传输数据的动态网页；拼接令牌：需要在实验页面 head 添加脚本校验 token；原链接：被试可随时访问。">悬停查看说明</span>
+            <span class="hint" id="adminEditAccessControlHint">原链接：直接呈现/跳转原链接，被试将能在任意时刻/设备访问该链接。</span>
           </label>
           <fieldset class="checkbox-group" id="adminEditAllowedDevices">
             <legend>允许设备</legend>
@@ -1898,6 +1917,7 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
   const editLocationLinkField = panel.querySelector("#adminEditLocationLinkField");
   const editAccessControlMode = panel.querySelector("#adminEditAccessControlMode");
   const editAccessControlModeField = panel.querySelector("#adminEditAccessControlModeField");
+  const editAccessControlHint = panel.querySelector("#adminEditAccessControlHint");
   const editAllowedDevices = panel.querySelector("#adminEditAllowedDevices");
   const editContactPhone = panel.querySelector("#adminEditContactPhone");
   const editDescription = panel.querySelector("#adminEditDescription");
@@ -1929,12 +1949,17 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
     if (!isOnline && editAccessControlMode) {
       editAccessControlMode.value = "none";
     }
+    updateAccessControlHint(editAccessControlMode, editAccessControlHint);
   };
   syncEditLocationFields();
   editLocation?.addEventListener("change", syncEditLocationFields);
 
   if (editAccessControlMode) {
     editAccessControlMode.value = experiment.access_control_mode || "none";
+    updateAccessControlHint(editAccessControlMode, editAccessControlHint);
+    editAccessControlMode.addEventListener("change", () => {
+      updateAccessControlHint(editAccessControlMode, editAccessControlHint);
+    });
   }
   if (editAllowedDevices) {
     const allowed = new Set(safeJsonParse(experiment.allowed_devices_json, ["desktop", "tablet", "mobile"]));
@@ -2097,9 +2122,14 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
 
   editSchedulePrev?.addEventListener("click", () => {
     const todayStart = normalizeStartDate(new Date(), adminScheduleState.dayCount);
+    const earliestSlot = getAdminEarliestSlotDate();
+    const earliestStart = earliestSlot
+      ? normalizeStartDate(earliestSlot, adminScheduleState.dayCount)
+      : todayStart;
+    const minStart = earliestStart < todayStart ? earliestStart : todayStart;
     const next = new Date(adminScheduleState.weekStart);
     next.setDate(next.getDate() - getDayStep(adminScheduleState.dayCount));
-    if (next < todayStart) return;
+    if (next < minStart) return;
     adminScheduleState.weekStart = next;
     adminScheduleState.autoStart = false;
     renderAdminEditScheduleGrid();
@@ -2443,6 +2473,10 @@ locationSelect?.addEventListener("change", () => {
   if (!isOnline && accessControlMode) {
     accessControlMode.value = "none";
   }
+  updateAccessControlHint(accessControlMode, accessControlHint);
+});
+accessControlMode?.addEventListener("change", () => {
+  updateAccessControlHint(accessControlMode, accessControlHint);
 });
 
 scheduleRequired?.addEventListener("change", () => {
