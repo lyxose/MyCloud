@@ -1541,9 +1541,11 @@ async function loadExperiments() {
   try {
     const data = await apiRequest("/experiments", { method: "GET" });
     state.experiments = data.experiments || [];
+    const participation = state.profile?.experiment_participation || {};
     if (state.selectedExperimentUid) {
       const exists = state.experiments.some((exp) => exp.experiment_uid === state.selectedExperimentUid);
-      if (!exists) {
+      const applied = !!participation[state.selectedExperimentUid];
+      if (!exists || applied) {
         state.selectedExperimentUid = null;
         state.selectedSlotIds.clear();
       }
@@ -1617,6 +1619,7 @@ function renderExperiments() {
   const container = experimentForm?.querySelector(".experiment-list");
   if (!container) return;
   container.innerHTML = "";
+  const participation = state.profile?.experiment_participation || {};
   if (!state.experiments.length) {
     const empty = document.createElement("p");
     empty.className = "hint";
@@ -1626,6 +1629,7 @@ function renderExperiments() {
   }
 
   state.experiments.forEach((exp) => {
+    if (participation[exp.experiment_uid]) return;
     const card = document.createElement("div");
     card.className = "experiment-card";
     const isSelected = state.selectedExperimentUid === exp.experiment_uid;
