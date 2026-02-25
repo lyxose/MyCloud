@@ -407,6 +407,63 @@ textarea:focus {
   background: #e7effa;
 }
 
+.multi-select {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 12px;
+  border: 1px solid #c9d6ea;
+  background: #ffffff;
+}
+
+.multi-select:focus-within {
+  box-shadow: 0 0 0 3px var(--ring);
+  border-color: var(--accent);
+}
+
+.multi-select input {
+  border: none;
+  padding: 0.2rem 0.1rem;
+  font-size: 0.95rem;
+  min-width: 160px;
+  flex: 1;
+  outline: none;
+}
+
+.multi-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.multi-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: #e7effa;
+  color: #245aa4;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.multi-tag button {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.multi-select .autocomplete-list {
+  top: calc(100% + 0.3rem);
+}
+
 .admin-area {
   margin-top: 2rem;
 }

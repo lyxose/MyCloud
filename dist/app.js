@@ -10,6 +10,8 @@ const state = {
   selectedExperimentUid: null,
   selectedSlotIds: new Set(),
   experimentSlots: {},
+  majors: [],
+  selectedMajors: [],
 };
 
 const adminEditState = {
@@ -47,6 +49,8 @@ const DEFAULT_UNITS = [
   "中国传媒大学",
 ];
 
+const DEFAULT_MAJORS = ["无"];
+
 const tabs = document.querySelectorAll(".tab");
 const tabPanels = {
   register: document.getElementById("tab-register"),
@@ -80,6 +84,10 @@ const profileSplit = document.querySelector(".split");
 
 const unitInput = document.getElementById("unitInput");
 const unitSuggestions = document.getElementById("unitSuggestions");
+const majorInput = document.getElementById("majorInput");
+const majorSuggestions = document.getElementById("majorSuggestions");
+const majorTags = document.getElementById("majorTags");
+const majorHidden = document.getElementById("majorHidden");
 
 const changePasswordBtn = document.getElementById("changePasswordBtn");
 const passwordPanel = document.getElementById("passwordPanel");
@@ -245,6 +253,8 @@ function populateProfileForm(profile) {
     ethnicityField.disabled = !!profile.ethnicity;
   }
 
+  setSelectedMajors(Array.isArray(profile.majors) ? profile.majors : []);
+
   const contactMapping = {
     alipay_phone: profile.alipay_phone,
     wechat: profile.wechat,
@@ -268,6 +278,7 @@ function renderProfile() {
     if (appliedExperimentList) {
       appliedExperimentList.innerHTML = "";
     }
+    setSelectedMajors([]);
     return;
   }
 
@@ -1515,6 +1526,17 @@ async function loadUnits() {
   }
 }
 
+async function loadMajors() {
+  try {
+    const data = await apiRequest("/majors", { method: "GET" });
+    const merged = new Set([...DEFAULT_MAJORS, ...(data.majors || [])]);
+    state.majors = Array.from(merged).sort();
+    renderMajorSuggestions();
+  } catch {
+    state.majors = [...DEFAULT_MAJORS];
+  }
+}
+
 function renderUnitSuggestions(query = "") {
   if (!unitSuggestions) return;
   const keyword = String(query || "").trim();
@@ -1538,6 +1560,92 @@ function renderUnitSuggestions(query = "") {
     unitSuggestions.appendChild(el);
   });
   unitSuggestions.classList.add("active");
+}
+
+function normalizeMajorValue(value) {
+  return String(value || "").trim();
+}
+
+function syncMajorsHidden() {
+  if (!majorHidden) return;
+  majorHidden.value = JSON.stringify(state.selectedMajors || []);
+}
+
+function renderMajorTags() {
+  if (!majorTags) return;
+  majorTags.innerHTML = "";
+  (state.selectedMajors || []).forEach((major) => {
+    const tag = document.createElement("span");
+    tag.className = "multi-tag";
+    tag.textContent = major;
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.textContent = "×";
+    removeBtn.addEventListener("click", () => {
+      removeMajor(major);
+    });
+    tag.appendChild(removeBtn);
+    majorTags.appendChild(tag);
+  });
+}
+
+function setSelectedMajors(list) {
+  const cleaned = (Array.isArray(list) ? list : [])
+    .map((item) => normalizeMajorValue(item))
+    .filter(Boolean);
+  const unique = Array.from(new Set(cleaned));
+  state.selectedMajors = unique.includes("无") ? ["无"] : unique;
+  syncMajorsHidden();
+  renderMajorTags();
+}
+
+function addMajor(value) {
+  const normalized = normalizeMajorValue(value);
+  if (!normalized) return;
+  if (normalized === "无") {
+    state.selectedMajors = ["无"];
+  } else {
+    state.selectedMajors = (state.selectedMajors || []).filter((item) => item !== "无");
+    if (!state.selectedMajors.includes(normalized)) {
+      state.selectedMajors.push(normalized);
+    }
+  }
+  syncMajorsHidden();
+  renderMajorTags();
+  renderMajorSuggestions("");
+}
+
+function removeMajor(value) {
+  state.selectedMajors = (state.selectedMajors || []).filter((item) => item !== value);
+  syncMajorsHidden();
+  renderMajorTags();
+  renderMajorSuggestions("");
+}
+
+function renderMajorSuggestions(query = "") {
+  if (!majorSuggestions) return;
+  const keyword = String(query || "").trim();
+  const source = state.majors || DEFAULT_MAJORS;
+  const list = keyword ? source.filter((item) => item.includes(keyword)) : source;
+  const filtered = list.filter((item) => !(state.selectedMajors || []).includes(item));
+  majorSuggestions.innerHTML = "";
+  if (filtered.length === 0) {
+    majorSuggestions.classList.remove("active");
+    return;
+  }
+
+  filtered.slice(0, 8).forEach((item) => {
+    const el = document.createElement("div");
+    el.className = "autocomplete-item";
+    el.textContent = item;
+    el.addEventListener("click", () => {
+      addMajor(item);
+      if (majorInput) majorInput.value = "";
+      majorSuggestions.classList.remove("active");
+    });
+    majorSuggestions.appendChild(el);
+  });
+  majorSuggestions.classList.add("active");
 }
 
 async function loadExperiments() {
@@ -2542,10 +2650,36 @@ unitInput?.addEventListener("focus", (event) => {
   renderUnitSuggestions(event.target.value);
 });
 
+majorInput?.addEventListener("input", (event) => {
+  renderMajorSuggestions(event.target.value);
+});
+
+majorInput?.addEventListener("focus", (event) => {
+  renderMajorSuggestions(event.target.value);
+});
+
+majorInput?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" || event.key === ",") {
+    event.preventDefault();
+    addMajor(majorInput.value);
+    majorInput.value = "";
+  }
+});
+
 document.addEventListener("click", (event) => {
   if (!unitSuggestions || !unitInput) return;
   if (!unitSuggestions.contains(event.target) && event.target !== unitInput) {
     unitSuggestions.classList.remove("active");
+  }
+});
+
+document.addEventListener("click", (event) => {
+  if (!majorSuggestions || !majorInput) return;
+  const inSuggestions = majorSuggestions.contains(event.target);
+  const inInput = event.target === majorInput;
+  const inTags = majorTags?.contains(event.target);
+  if (!inSuggestions && !inInput && !inTags) {
+    majorSuggestions.classList.remove("active");
   }
 });
 
@@ -2730,6 +2864,7 @@ profileForm.addEventListener("submit", async (event) => {
   }
   setStatus(profileStatus, "保存中...");
   try {
+    syncMajorsHidden();
     const updates = toJsonForm(profileForm);
     await apiRequest("/profile/update", { method: "POST", json: { updates } });
     setStatus(profileStatus, "已保存");
@@ -2937,6 +3072,7 @@ logoutBtn.addEventListener("click", async () => {
 
 loadProfile();
 loadUnits();
+loadMajors();
 renderScheduleGrid();
 attachScheduleResizeObserver();
 

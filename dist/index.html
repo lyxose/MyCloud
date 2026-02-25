@@ -38,6 +38,7 @@
             <label>
               姓名
               <input name="name" required />
+            </label>
             <label>
               密码
               <input name="password" type="password" minlength="6" required placeholder="注意留存、无法找回" />
@@ -169,6 +170,16 @@
               <label>
                 所在学校/单位全称
                 <input name="unit" required />
+              </label>
+              <label>
+                所学专业
+                <div class="multi-select" id="majorSelect">
+                  <div class="multi-tags" id="majorTags"></div>
+                  <input id="majorInput" placeholder="输入后回车添加，可多选" autocomplete="off" />
+                  <div class="autocomplete-list" id="majorSuggestions"></div>
+                </div>
+                <input type="hidden" name="majors_json" id="majorHidden" />
+                <span class="hint">可多选；可填写；选择“无”将清空其他选项</span>
               </label>
               <label>
                 职业
