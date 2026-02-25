@@ -63,6 +63,7 @@ const registerStatus = document.getElementById("registerStatus");
 const loginStatus = document.getElementById("loginStatus");
 const profileStatus = document.getElementById("profileStatus");
 const experimentStatus = document.getElementById("experimentStatus");
+const appliedExperimentList = document.getElementById("appliedExperimentList");
 
 const profileEmpty = document.getElementById("profileEmpty");
 const profileArea = document.getElementById("profileArea");
@@ -264,6 +265,9 @@ function renderProfile() {
     adminExperimentsSection?.classList.add("hidden");
     consentSection?.classList.remove("hidden");
     authCard?.classList.remove("hidden");
+    if (appliedExperimentList) {
+      appliedExperimentList.innerHTML = "";
+    }
     return;
   }
 
@@ -1551,6 +1555,7 @@ async function loadExperiments() {
       }
     }
     renderExperiments();
+    renderAppliedExperiments();
   } catch (error) {
     state.experiments = [];
   }
@@ -1602,6 +1607,16 @@ function parseSlotRequirement(value) {
   return { operator, count: Number(match[2]), raw: `${operator}${Number(match[2])}` };
 }
 
+function formatSlotRequirementHint(value) {
+  const { operator, count } = parseSlotRequirement(value || "=1");
+  if (operator === "=") return `请选中${count}个时段`;
+  if (operator === ">=") return `请至少选中${count}个时段`;
+  if (operator === ">") return `请至少选中超过${count}个时段`;
+  if (operator === "<=") return `请最多选中${count}个时段`;
+  if (operator === "<") return `请最多选中少于${count}个时段`;
+  return `请选中${count}个时段`;
+}
+
 function toggleScheduleSlotSelection(exp, slot, slots) {
   state.selectedExperimentUid = exp.experiment_uid;
   const key = String(slot.id);
@@ -1628,6 +1643,7 @@ function renderExperiments() {
     return;
   }
 
+  let rendered = 0;
   state.experiments.forEach((exp) => {
     if (participation[exp.experiment_uid]) return;
     const card = document.createElement("div");
@@ -1635,10 +1651,14 @@ function renderExperiments() {
     const isSelected = state.selectedExperimentUid === exp.experiment_uid;
     if (isSelected) card.classList.add("selected");
     const eligibility = exp.eligibility?.ok
-      ? "可报名"
+      ? ""
       : exp.eligibility?.reason === "您所属分组已满员"
         ? "名额已满"
         : exp.eligibility?.reason || "暂不可报名";
+    const noticeText = exp.notes ? `注意：${exp.notes}` : "";
+    const slotHint = exp.schedule_required
+      ? formatSlotRequirementHint(exp.schedule_slots_required || "=1")
+      : "";
     const actionHtml = exp.schedule_required
       ? `<button type="button" class="ghost" data-action="detail">查看详情</button>`
       : `<button type="button" class="primary" data-action="select">${isSelected ? "已选中" : "选中"}</button>`;
@@ -1649,8 +1669,9 @@ function renderExperiments() {
       </div>
       <div class="experiment-card-body">
         <p>${exp.description || "暂无简介"}</p>
-        ${exp.schedule_required ? `<p class="hint">预约数量要求：${exp.schedule_slots_required || "=1"} 个时段</p>` : ""}
-        <p class="hint">${eligibility}</p>
+        ${noticeText ? `<p class="notice">${noticeText}</p>` : ""}
+        ${slotHint ? `<p class="hint">${slotHint}</p>` : ""}
+        ${eligibility ? `<p class="hint">${eligibility}</p>` : ""}
       </div>
       <div class="experiment-card-actions">
         ${actionHtml}
@@ -1664,7 +1685,15 @@ function renderExperiments() {
     selectBtn?.addEventListener("click", () => setSelectedExperiment(exp, null));
 
     container.appendChild(card);
+    rendered += 1;
   });
+
+  if (rendered === 0) {
+    const empty = document.createElement("p");
+    empty.className = "hint";
+    empty.textContent = "暂无开放实验。";
+    container.appendChild(empty);
+  }
 
   if (state.selectedExperimentUid) {
     const selected = state.experiments.find((exp) => exp.experiment_uid === state.selectedExperimentUid);
@@ -1673,6 +1702,63 @@ function renderExperiments() {
       renderExperimentSlots(selected, slots);
     }
   }
+}
+
+function renderAppliedExperiments() {
+  if (!appliedExperimentList) return;
+  const participation = state.profile?.experiment_participation || {};
+  const entries = Object.entries(participation);
+  appliedExperimentList.innerHTML = "";
+  if (!entries.length) {
+    const empty = document.createElement("p");
+    empty.className = "hint";
+    empty.textContent = "暂无已报名实验。";
+    appliedExperimentList.appendChild(empty);
+    return;
+  }
+
+  const applied = entries.map(([uid, record]) => {
+    const exp = state.experiments.find((item) => item.experiment_uid === uid);
+    const slots = Array.isArray(record?.slots) ? record.slots : [];
+    const startTimes = slots
+      .map((slot) => Date.parse(slot.start_time || slot.startTime || ""))
+      .filter((value) => !Number.isNaN(value));
+    const sortTime = startTimes.length
+      ? Math.max(...startTimes)
+      : Date.parse(record?.applied_at || "") || 0;
+    return {
+      uid,
+      name: exp?.name || record?.experiment_type || uid,
+      type: exp?.type || record?.experiment_type || "-",
+      contact: exp?.contact_phone || "",
+      notes: exp?.notes || "",
+      latestTime: sortTime,
+      slotLabel: startTimes.length
+        ? formatSlotDateTime(new Date(Math.max(...startTimes)).toISOString())
+        : "-",
+    };
+  });
+
+  applied.sort((a, b) => b.latestTime - a.latestTime);
+
+  applied.forEach((item) => {
+    const card = document.createElement("div");
+    card.className = "experiment-card";
+    const contact = item.contact ? `主试联系方式：${item.contact}` : "主试联系方式：-";
+    const notice = item.notes ? `注意：${item.notes}` : "";
+    card.innerHTML = `
+      <div class="experiment-card-header">
+        <strong>${item.name}</strong>
+        <span>${item.type}</span>
+      </div>
+      <div class="experiment-card-body">
+        <p class="hint">预约时间：${item.slotLabel}</p>
+        ${notice ? `<p class="notice">${notice}</p>` : ""}
+        <p class="hint">${contact}</p>
+      </div>
+    `;
+    appliedExperimentList.appendChild(card);
+  });
 }
 
 async function loadAdminExperiments() {
@@ -1865,8 +1951,8 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
             <textarea name="description" rows="3" id="adminEditDescription">${experiment.description || ""}</textarea>
           </label>
           <label>
-            特殊说明
-            <textarea name="notes" rows="2" id="adminEditNotes">${experiment.notes || ""}</textarea>
+            注意事项
+            <textarea name="notes" rows="1" class="note-input" id="adminEditNotes">${experiment.notes || ""}</textarea>
           </label>
           <label>
             预计时长（分钟）
@@ -2809,7 +2895,7 @@ experimentForm.addEventListener("submit", async (event) => {
       (requirement.operator === "<" && count < requirement.count) ||
       (requirement.operator === "<=" && count <= requirement.count);
     if (!meets) {
-      setStatus(experimentStatus, `请选择符合数量要求的时间段（${requirement.raw}）`, true);
+      setStatus(experimentStatus, formatSlotRequirementHint(exp.schedule_slots_required || "=1"), true);
       if (submitBtn) {
         submitBtn.disabled = false;
         submitBtn.classList.remove("loading");
@@ -2826,10 +2912,7 @@ experimentForm.addEventListener("submit", async (event) => {
   try {
     await applyExperiment(exp, exp.schedule_required ? selectedSlots : null);
   } finally {
-    await loadExperiments();
-    if (exp.schedule_required) {
-      await showExperimentDetail(exp);
-    }
+    await loadProfile();
     if (submitBtn) {
       submitBtn.disabled = false;
       submitBtn.classList.remove("loading");

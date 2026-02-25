@@ -38,10 +38,10 @@
             <label>
               姓名
               <input name="name" required />
-            </label>
-            <label>
-              密码
-              <input name="password" type="password" minlength="6" required placeholder="注意留存、无法找回" />
+                    <label>
+                      注意事项
+                      <textarea name="notes" rows="1" class="note-input"></textarea>
+                    </label>
             </label>
             <label>
               确认密码
@@ -297,6 +297,12 @@
               <button type="submit" class="primary">提交报名</button>
               <p class="form-note" id="experimentStatus"></p>
             </form>
+            <div class="experiment-panel" id="appliedExperimentsPanel">
+              <h4>已报名的实验</h4>
+              <div class="experiment-list" id="appliedExperimentList">
+                <p class="hint">暂无已报名实验。</p>
+              </div>
+            </div>
           </div>
 
           <div id="adminArea" class="admin-area hidden">
@@ -393,8 +399,8 @@
                       <textarea name="description" rows="3"></textarea>
                     </label>
                     <label>
-                      特殊说明
-                      <textarea name="notes" rows="2"></textarea>
+                      注意事项
+                      <textarea name="notes" rows="1" class="note-input"></textarea>
                     </label>
                     <label>
                       预计时长（分钟）

@@ -827,6 +827,8 @@ body.is-admin .split {
 
 .experiment-panel .experiment-list {
   flex: 1;
+  max-height: 320px;
+  overflow-y: auto;
 }
 
 .experiment-panel .primary {
@@ -842,6 +844,16 @@ body.is-admin .split {
   flex-direction: column;
   gap: 0.6rem;
   margin-bottom: 0.8rem;
+}
+
+.experiment-card .notice {
+  font-weight: 600;
+  color: #1f3b6e;
+}
+
+.note-input {
+  min-height: 2.4rem;
+  resize: vertical;
 }
 
 .experiment-card.selected {
