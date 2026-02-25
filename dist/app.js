@@ -1841,7 +1841,7 @@ function renderExperiments() {
   if (!state.experiments.length) {
     const empty = document.createElement("p");
     empty.className = "hint";
-    empty.textContent = "暂无开放实验。";
+    empty.textContent = "您暂无可报名实验。若新增实验或名额，将在此处显示可报名的实验列表。";
     container.appendChild(empty);
     return;
   }
@@ -1894,7 +1894,7 @@ function renderExperiments() {
   if (rendered === 0) {
     const empty = document.createElement("p");
     empty.className = "hint";
-    empty.textContent = "暂无开放实验。";
+    empty.textContent = "您暂无可报名实验。若新增实验或名额，将在此处显示可报名的实验列表。";
     container.appendChild(empty);
   }
 
@@ -2080,12 +2080,15 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
         <div class="info-card">
           <strong>设置说明（入组条件 + 名额分配）</strong>
                     <p>1) 入组条件写法：字段 + 比较符号 + 值；支持 <span class="mono">=</span>、<span class="mono">!=</span>、<span class="mono">≠</span>、<span class="mono">&gt;</span>、<span class="mono">&lt;</span>、<span class="mono">&gt;=</span>、<span class="mono">&lt;=</span>；使用 <span class="mono">&</span> 表示同时满足，<span class="mono">|</span> 表示二选一，括号用于分组。</p>
-                    <p>可用字段：<span class="mono">年龄</span>、<span class="mono">所在地区</span>、<span class="mono">左/右利手</span>、<span class="mono">左眼近视度数</span>、<span class="mono">右眼近视度数</span>、<span class="mono">民族</span>、<span class="mono">受教育年限</span>、<span class="mono">身高</span>、<span class="mono">体重</span>、<span class="mono">头围</span>、<span class="mono">参与过</span>。</p>
+                    <p>可用字段：<span class="mono">年龄</span>、<span class="mono">所在地区</span>、<span class="mono">左/右利手</span>、<span class="mono">左眼近视度数</span>、<span class="mono">右眼近视度数</span>、<span class="mono">民族</span>、<span class="mono">职业</span>、<span class="mono">专业</span>、<span class="mono">受教育年限</span>、<span class="mono">身高</span>、<span class="mono">体重</span>、<span class="mono">头围</span>、<span class="mono">参与过</span>。</p>
                     <p>示例：<span class="mono">年龄>=18 & 年龄<30 & (左眼近视度数<600|右眼近视度数<600)</span></p>
+                    <p>示例：<span class="mono">专业!=心理学类</span> 或 <span class="mono">职业=学生</span></p>
                     <p>示例：<span class="mono">参与过!=E000001</span> 或 <span class="mono">参与过=眼动</span></p>
+                    <p>提示：<span class="mono">专业</span> 为多选字段，<span class="mono">=</span> 表示包含该项，<span class="mono">!=</span> 表示不包含该项。</p>
           <p>2) 名额分配写法：每行是一组配额；同一行内用 <span class="mono">&</span> 连接多个条件；<span class="mono">条件*人数</span>；使用 <span class="mono">ALL*20</span> 表示不限条件。</p>
           <p>区间写法：<span class="mono">年龄[18,30)</span> 表示 $18\le \text{年龄}<30$；<span class="mono">[</span> 与 <span class="mono">]</span> 表示包含，<span class="mono">(</span> 与 <span class="mono">)</span> 表示不包含。</p>
           <p>示例：<span class="mono">性别=男*10 & =女*10</span></p>
+          <p>示例：<span class="mono">专业=心理学类*10 & =法学类*10</span></p>
           <p>示例：<span class="mono">年龄[18,30)*20 & >30*0 & [0,18)*0</span></p>
           <p class="hint">注意：入组条件与名额分配需同时满足，条件之间不可冲突。</p>
         </div>
