@@ -174,6 +174,12 @@ function initTokenScriptHelp() {
 }
 
 function setUploadMode(mode) {
+  if (locationSelect?.value !== "在线") {
+    uploadTabs?.classList.add("hidden");
+    uploadPanelLink?.classList.add("hidden");
+    uploadPanelUpload?.classList.add("hidden");
+    return;
+  }
   uploadState.mode = mode === "upload" ? "upload" : "link";
   uploadTabs?.querySelectorAll(".mini-tab").forEach((tab) => {
     tab.classList.toggle("active", tab.dataset.uploadTab === uploadState.mode);
@@ -3640,6 +3646,9 @@ logoutBtn.addEventListener("click", async () => {
 
 initTokenScriptHelp();
 setUploadMode(uploadState.mode);
+if (locationSelect?.value !== "在线") {
+  uploadTabs?.classList.add("hidden");
+}
 
 loadProfile();
 loadUnits();
