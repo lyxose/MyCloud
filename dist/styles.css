@@ -993,17 +993,9 @@ body.is-admin .split {
   margin-bottom: 0.4rem;
 }
 
-.script-code {
-  margin: 0;
-  padding: 0.6rem;
-  border-radius: 10px;
-  background: #0f172a;
-  color: #e2e8f0;
-  font-size: 0.8rem;
-  line-height: 1.35;
-  max-height: 240px;
-  overflow: auto;
-  white-space: pre-wrap;
+.script-card .ghost {
+  margin-top: 0.6rem;
+  align-self: flex-start;
 }
 
 .upload-title {

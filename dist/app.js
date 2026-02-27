@@ -150,9 +150,27 @@ function setUploadStatusText(text, isError = false) {
   uploadStatus.style.color = isError ? "#b42318" : "";
 }
 
+function bindCopyButtons(root) {
+  if (!root) return;
+  root.querySelectorAll("[data-copy-script]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const type = btn.dataset.copyScript;
+      const code = type === "block" ? TOKEN_SCRIPT_BLOCK : TOKEN_SCRIPT_MASK;
+      try {
+        await navigator.clipboard.writeText(code);
+        btn.textContent = "已复制";
+        setTimeout(() => {
+          btn.textContent = "复制脚本";
+        }, 1600);
+      } catch {
+        alert("复制失败，请手动复制。");
+      }
+    });
+  });
+}
+
 function initTokenScriptHelp() {
-  if (tokenScriptMask) tokenScriptMask.textContent = TOKEN_SCRIPT_MASK;
-  if (tokenScriptBlock) tokenScriptBlock.textContent = TOKEN_SCRIPT_BLOCK;
+  bindCopyButtons(document);
 }
 
 function setUploadMode(mode) {
@@ -462,15 +480,13 @@ const uploadZoneMeta = document.getElementById("uploadZoneMeta");
 const uploadStatus = document.getElementById("uploadStatus");
 const downloadPolicyField = document.getElementById("downloadPolicyField");
 const downloadPolicy = document.getElementById("downloadPolicy");
-const allowDownloadField = document.getElementById("allowDownloadField");
-const allowDownload = document.getElementById("allowDownload");
 const accessControlModeField = document.getElementById("accessControlModeField");
 const accessControlMode = document.getElementById("accessControlMode");
 const accessControlHint = document.getElementById("accessControlHint");
 const allowedDevicesField = document.getElementById("allowedDevicesField");
 const tokenScriptHelp = document.getElementById("tokenScriptHelp");
-const tokenScriptMask = document.getElementById("tokenScriptMask");
-const tokenScriptBlock = document.getElementById("tokenScriptBlock");
+const tokenScriptMask = null;
+const tokenScriptBlock = null;
 
 const adminExperimentsSection = document.getElementById("adminExperiments");
 const adminExperimentList = document.getElementById("adminExperimentList");
@@ -2478,16 +2494,18 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
             <span class="hint" id="adminEditAccessControlHint">原链接：直接呈现/跳转原链接，被试将能在任意时刻/设备访问该链接。</span>
           </label>
           <div class="info-card hidden" id="adminEditTokenScriptHelp">
-            <strong>拼接令牌需在实验页面 head 中添加脚本</strong>
-            <p class="hint">二选一：遮罩验证或直接阻断。</p>
+            <strong>拼接令牌操作说明</strong>
+            <p class="hint">将脚本粘贴到实验页面 <span class="mono">head</span> 内（建议放在最前面）。二选一：</p>
             <div class="script-pair">
               <div class="script-card">
                 <div class="script-title">方案 A（遮罩验证，推荐）</div>
-                <pre class="script-code" id="adminEditTokenScriptMask"></pre>
+                <p class="hint">进入页面先显示验证遮罩，通过后自动放行。</p>
+                <button type="button" class="ghost" data-copy-script="mask">复制脚本</button>
               </div>
               <div class="script-card">
                 <div class="script-title">方案 B（直接阻断）</div>
-                <pre class="script-code" id="adminEditTokenScriptBlock"></pre>
+                <p class="hint">直接隐藏页面，验证失败则显示错误提示。</p>
+                <button type="button" class="ghost" data-copy-script="block">复制脚本</button>
               </div>
             </div>
           </div>
@@ -2560,8 +2578,6 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
   const editAccessControlModeField = panel.querySelector("#adminEditAccessControlModeField");
   const editAccessControlHint = panel.querySelector("#adminEditAccessControlHint");
   const editTokenScriptHelp = panel.querySelector("#adminEditTokenScriptHelp");
-  const editTokenScriptMask = panel.querySelector("#adminEditTokenScriptMask");
-  const editTokenScriptBlock = panel.querySelector("#adminEditTokenScriptBlock");
   const editAllowedDevices = panel.querySelector("#adminEditAllowedDevices");
   const editContactPhone = panel.querySelector("#adminEditContactPhone");
   const editDescription = panel.querySelector("#adminEditDescription");
@@ -2587,13 +2603,12 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
   const isHosted = accessConfig?.hosted === true;
 
   const updateEditTokenHelp = () => {
-    if (editTokenScriptMask) editTokenScriptMask.textContent = TOKEN_SCRIPT_MASK;
-    if (editTokenScriptBlock) editTokenScriptBlock.textContent = TOKEN_SCRIPT_BLOCK;
     const show = editLocation?.value === "在线"
       && !isHosted
       && editAccessControlMode?.value === "token";
     editTokenScriptHelp?.classList.toggle("hidden", !show);
   };
+  bindCopyButtons(panel);
 
   const syncEditLocationFields = () => {
     if (!editLocation) return;
@@ -3526,7 +3541,6 @@ adminExperimentForm?.addEventListener("submit", async (event) => {
     if (useHostedUpload) {
       requestPayload.hosted_prefix = uploadState.prefix;
       requestPayload.download_policy = downloadPolicy?.value || "upload_only";
-      requestPayload.allow_download = allowDownload?.value !== "no";
     }
 
     const result = await apiRequest("/admin/experiment/create", {

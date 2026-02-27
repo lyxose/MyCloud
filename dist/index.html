@@ -412,15 +412,9 @@
                       <label id="downloadPolicyField">
                         数据保存方式
                         <select name="download_policy" id="downloadPolicy">
+                          <option value="download_and_upload">同时上传到服务器并下载到本地</option>
                           <option value="upload_only">仅上传到服务器</option>
-                          <option value="download_and_upload">下载并上传（双保险）</option>
-                        </select>
-                      </label>
-                      <label id="allowDownloadField">
-                        允许本地下载数据
-                        <select name="allow_download" id="allowDownload">
-                          <option value="yes">允许</option>
-                          <option value="no">不允许</option>
+                          <option value="download_only">仅下载到本地（不推荐）</option>
                         </select>
                       </label>
                     </div>
@@ -434,16 +428,18 @@
                       <span class="hint" id="accessControlHint">原链接：直接呈现/跳转原链接，被试将能在任意时刻/设备访问该链接。</span>
                     </label>
                     <div class="info-card hidden" id="tokenScriptHelp">
-                      <strong>拼接令牌需在实验页面 head 中添加脚本</strong>
-                      <p class="hint">二选一：遮罩验证或直接阻断。</p>
+                      <strong>拼接令牌操作说明</strong>
+                      <p class="hint">将脚本粘贴到实验页面 <span class="mono">head</span> 内（建议放在最前面）。二选一：</p>
                       <div class="script-pair">
                         <div class="script-card">
                           <div class="script-title">方案 A（遮罩验证，推荐）</div>
-                          <pre class="script-code" id="tokenScriptMask"></pre>
+                          <p class="hint">进入页面先显示验证遮罩，通过后自动放行。</p>
+                          <button type="button" class="ghost" data-copy-script="mask">复制脚本</button>
                         </div>
                         <div class="script-card">
                           <div class="script-title">方案 B（直接阻断）</div>
-                          <pre class="script-code" id="tokenScriptBlock"></pre>
+                          <p class="hint">直接隐藏页面，验证失败则显示错误提示。</p>
+                          <button type="button" class="ghost" data-copy-script="block">复制脚本</button>
                         </div>
                       </div>
                     </div>
