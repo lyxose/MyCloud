@@ -2205,6 +2205,7 @@ function renderExperiments() {
     if (participation[exp.experiment_uid]) return;
     const card = document.createElement("div");
     card.className = "experiment-card";
+    card.dataset.experimentUid = exp.experiment_uid;
     const isSelected = state.selectedExperimentUid === exp.experiment_uid;
     if (isSelected) card.classList.add("selected");
     const eligibility = exp.eligibility?.ok
@@ -3025,6 +3026,7 @@ function renderExperimentSlots(exp, slots) {
   if (existing) existing.remove();
   const slotWrap = document.createElement("div");
   slotWrap.className = "experiment-slots";
+  slotWrap.dataset.experimentUid = exp.experiment_uid;
   const sortedSlots = [...slots].sort((a, b) => Date.parse(a.start_time || "") - Date.parse(b.start_time || ""));
   state.experimentSlots[exp.experiment_uid] = sortedSlots;
   slotWrap.innerHTML = `<p class="hint">请选择可预约时间段</p>`;
@@ -3052,7 +3054,14 @@ function renderExperimentSlots(exp, slots) {
       slotWrap.appendChild(btn);
     });
   }
-  container.appendChild(slotWrap);
+  const targetCard = container.querySelector(`.experiment-card[data-experiment-uid="${exp.experiment_uid}"]`);
+  if (targetCard?.nextSibling) {
+    container.insertBefore(slotWrap, targetCard.nextSibling);
+  } else if (targetCard?.parentNode) {
+    targetCard.parentNode.appendChild(slotWrap);
+  } else {
+    container.appendChild(slotWrap);
+  }
 }
 
 function formatSlotTime(value) {

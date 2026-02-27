@@ -471,19 +471,18 @@ textarea:focus {
 .admin-tabs {
   display: flex;
   gap: 0.4rem;
-  margin-bottom: 1rem;
+  margin-bottom: 0.6rem;
   flex-wrap: nowrap;
   overflow-x: auto;
   overflow-y: hidden;
   scroll-behavior: smooth;
-  scrollbar-gutter: stable;
   scrollbar-width: none;
   position: relative;
   border-bottom: 1px solid #c9d6ea;
 }
 
 .admin-tabs::-webkit-scrollbar {
-  display: none;
+  height: 0;
 }
 
 .admin-tabs .tab {
@@ -500,10 +499,10 @@ textarea:focus {
 }
 
 .admin-tabs .tab.active {
-  background: #ffffff;
+  background: linear-gradient(180deg, #ffffff 0%, #f4f8ff 100%);
   color: var(--text);
   border-bottom: 1px solid #ffffff;
-  box-shadow: 0 -3px 0 var(--accent) inset;
+  border-top: 3px solid var(--accent);
 }
 
 .admin-panel {
@@ -969,22 +968,27 @@ body.is-admin .split {
   margin-top: 0.2rem;
 }
 
+.upload-tabs.hidden {
+  display: none;
+}
+
 .mini-tab {
   border: 1px solid rgba(58, 123, 213, 0.3);
-  background: #f3f7fd;
+  background: #eef4fb;
   color: var(--muted);
   padding: 0.4rem 1rem;
   border-radius: 8px 8px 0 0;
   cursor: pointer;
   font-weight: 600;
   transition: all 0.2s ease;
+  border-bottom: none;
 }
 
 .mini-tab.active {
-  background: #ffffff;
+  background: linear-gradient(180deg, #ffffff 0%, #f4f8ff 100%);
   color: var(--text);
   border-color: #c9d6ea;
-  box-shadow: 0 -3px 0 var(--accent) inset;
+  border-top: 3px solid var(--accent);
 }
 
 .upload-panel {
