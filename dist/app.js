@@ -90,6 +90,7 @@ const TOKEN_SCRIPT_MASK = `<script>
 })();
 </script>`;
 
+// NOTE: When embedding JS snippets as template literals, escape any ${} that should remain literal.
 const TOKEN_SCRIPT_BLOCK = `<script>
 (function () {
   const ACCESS_BASE = "https://exp.vaonline.dpdns.org";
@@ -101,7 +102,7 @@ const TOKEN_SCRIPT_BLOCK = `<script>
     document.documentElement.innerHTML = "";
     document.body.style.margin = "0";
     document.body.style.fontFamily = "Noto Sans SC, sans-serif";
-    document.body.innerHTML = \`<div style=\\"min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f6f7fb;color:#1f2937\\"><div style=\\"max-width:420px;padding:24px;text-align:center\\"><h2>无法进入实验</h2><p style=\\"color:#b42318\\">${message}</p></div></div>\`;
+    document.body.innerHTML = \`<div style=\\"min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f6f7fb;color:#1f2937\\"><div style=\\"max-width:420px;padding:24px;text-align:center\\"><h2>无法进入实验</h2><p style=\\"color:#b42318\\">\\${message}</p></div></div>\`;
     document.documentElement.style.visibility = "visible";
   }
 
