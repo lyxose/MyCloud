@@ -476,21 +476,14 @@ textarea:focus {
   overflow-x: auto;
   overflow-y: hidden;
   scroll-behavior: smooth;
-  padding-bottom: 0.8rem;
-  margin-bottom: 0.2rem;
+  scrollbar-gutter: stable;
+  scrollbar-width: none;
   position: relative;
-  border-bottom: none;
+  border-bottom: 1px solid #c9d6ea;
 }
 
-.admin-tabs::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, #c9d6ea 0%, #c9d6ea 80%, transparent 100%);
-  z-index: 1;
+.admin-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .admin-tabs .tab {
@@ -498,19 +491,19 @@ textarea:focus {
   background: #eef4fb;
   color: var(--muted);
   border: 1px solid #c9d6ea;
-  border-bottom: 1px solid #ffffff;
+  border-bottom: none;
   padding: 0.5rem 1.2rem;
   flex-shrink: 0;
   transition: all 0.2s ease;
   position: relative;
-  z-index: 2;
+  margin-bottom: -1px;
 }
 
 .admin-tabs .tab.active {
   background: #ffffff;
   color: var(--text);
+  border-bottom: 1px solid #ffffff;
   box-shadow: 0 -3px 0 var(--accent) inset;
-  border-bottom-color: #ffffff;
 }
 
 .admin-panel {
@@ -988,10 +981,10 @@ body.is-admin .split {
 }
 
 .mini-tab.active {
-  background: var(--accent);
-  color: #fff;
-  border-color: transparent;
-  box-shadow: 0 -2px 0 #fff inset;
+  background: #ffffff;
+  color: var(--text);
+  border-color: #c9d6ea;
+  box-shadow: 0 -3px 0 var(--accent) inset;
 }
 
 .upload-panel {
