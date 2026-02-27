@@ -392,6 +392,30 @@
                       实验链接
                       <input name="location_link" />
                     </label>
+                    <div class="upload-block hidden" id="hostedUploadField">
+                      <span class="upload-title">在线实验文件夹（可选）</span>
+                      <div class="upload-zone" id="uploadZone">
+                        <input type="file" id="uploadFolderInput" webkitdirectory directory multiple />
+                        <div class="upload-zone-text">拖拽文件夹到这里，或点击选择文件夹</div>
+                        <div class="upload-zone-meta" id="uploadZoneMeta">需包含 index.html</div>
+                      </div>
+                      <div class="upload-status" id="uploadStatus"></div>
+                      <p class="hint">上传后自动生成在线链接；若不上传请填写实验链接。</p>
+                    </div>
+                    <label id="downloadPolicyField" class="hidden">
+                      数据保存方式
+                      <select name="download_policy" id="downloadPolicy">
+                        <option value="upload_only">仅上传到服务器</option>
+                        <option value="download_and_upload">下载并上传（双保险）</option>
+                      </select>
+                    </label>
+                    <label id="allowDownloadField" class="hidden">
+                      允许本地下载数据
+                      <select name="allow_download" id="allowDownload">
+                        <option value="yes">允许</option>
+                        <option value="no">不允许</option>
+                      </select>
+                    </label>
                     <label id="accessControlModeField" class="hidden">
                       在线访问控制
                       <select name="access_control_mode" id="accessControlMode">

@@ -20,6 +20,51 @@ const adminEditState = {
   participants: {},
 };
 
+const uploadState = {
+  prefix: null,
+  files: [],
+  totalBytes: 0,
+  uploadedBytes: 0,
+  hasIndex: false,
+  uploading: false,
+  ready: false,
+};
+
+function resetUploadState() {
+  uploadState.prefix = null;
+  uploadState.files = [];
+  uploadState.totalBytes = 0;
+  uploadState.uploadedBytes = 0;
+  uploadState.hasIndex = false;
+  uploadState.uploading = false;
+  uploadState.ready = false;
+  if (uploadZoneMeta) uploadZoneMeta.textContent = "需包含 index.html";
+  setUploadStatusText("");
+}
+
+function setUploadStatusText(text, isError = false) {
+  if (!uploadStatus) return;
+  uploadStatus.textContent = text;
+  uploadStatus.style.color = isError ? "#b42318" : "";
+}
+
+function normalizeUploadPath(file) {
+  const raw = file?.webkitRelativePath || file?.name || "";
+  const parts = raw.split("/").filter(Boolean);
+  if (parts.length > 1) parts.shift();
+  return parts.join("/");
+}
+
+function describeUploadSelection(files) {
+  const totalBytes = files.reduce((sum, file) => sum + (file.size || 0), 0);
+  const hasIndex = files.some((file) => {
+    const path = normalizeUploadPath(file).toLowerCase();
+    return path === "index.html" || path.endsWith("/index.html");
+  });
+  const mb = (totalBytes / (1024 * 1024)).toFixed(1);
+  return { totalBytes, hasIndex, mb };
+}
+
 const DEFAULT_UNITS = [
   "北京大学",
   "清华大学",
@@ -218,6 +263,15 @@ const scheduleSlotsRequired = document.getElementById("scheduleSlotsRequired");
 const locationSelect = document.getElementById("locationSelect");
 const locationLinkField = document.getElementById("locationLinkField");
 const locationCustomField = document.getElementById("locationCustomField");
+const hostedUploadField = document.getElementById("hostedUploadField");
+const uploadZone = document.getElementById("uploadZone");
+const uploadFolderInput = document.getElementById("uploadFolderInput");
+const uploadZoneMeta = document.getElementById("uploadZoneMeta");
+const uploadStatus = document.getElementById("uploadStatus");
+const downloadPolicyField = document.getElementById("downloadPolicyField");
+const downloadPolicy = document.getElementById("downloadPolicy");
+const allowDownloadField = document.getElementById("allowDownloadField");
+const allowDownload = document.getElementById("allowDownload");
 const accessControlModeField = document.getElementById("accessControlModeField");
 const accessControlMode = document.getElementById("accessControlMode");
 const accessControlHint = document.getElementById("accessControlHint");
@@ -287,6 +341,88 @@ async function apiRequest(path, options = {}) {
     throw new Error(message);
   }
   return data;
+}
+
+async function initHostedUpload() {
+  const result = await apiRequest("/admin/experiment/upload/init", { method: "POST" });
+  uploadState.prefix = result.prefix;
+}
+
+async function uploadHostedFile(prefix, file) {
+  const path = normalizeUploadPath(file);
+  if (!path) return;
+  await apiRequest("/admin/experiment/upload/file", {
+    method: "POST",
+    headers: {
+      "Content-Type": file.type || "application/octet-stream",
+      "X-Prefix": prefix,
+      "X-Path": path,
+    },
+    body: file,
+  });
+}
+
+async function startHostedUpload(files) {
+  if (!files.length) return;
+  uploadState.uploading = true;
+  uploadState.ready = false;
+  setUploadStatusText("正在初始化上传...");
+  await initHostedUpload();
+  setUploadStatusText(`准备上传 ${files.length} 个文件...`);
+  uploadState.uploadedBytes = 0;
+  for (let index = 0; index < files.length; index += 1) {
+    const file = files[index];
+    await uploadHostedFile(uploadState.prefix, file);
+    uploadState.uploadedBytes += file.size || 0;
+    const percent = uploadState.totalBytes
+      ? Math.min(100, Math.round((uploadState.uploadedBytes / uploadState.totalBytes) * 100))
+      : 0;
+    setUploadStatusText(`已上传 ${index + 1}/${files.length}，${percent}%`);
+  }
+  uploadState.uploading = false;
+  uploadState.ready = true;
+  setUploadStatusText("上传完成，可以发布实验。 ");
+}
+
+function setHostedLinkMode(isHosted) {
+  const linkInput = locationLinkField?.querySelector("input");
+  if (!linkInput) return;
+  if (isHosted) {
+    linkInput.value = "";
+    linkInput.placeholder = "由系统生成";
+    linkInput.disabled = true;
+  } else {
+    linkInput.disabled = false;
+    linkInput.placeholder = "";
+  }
+}
+
+async function handleUploadSelection(fileList) {
+  const files = Array.from(fileList || []);
+  resetUploadState();
+  setHostedLinkMode(false);
+  if (!files.length) return;
+  if (locationSelect?.value !== "在线") {
+    setUploadStatusText("仅在线实验可上传", true);
+    return;
+  }
+  const { totalBytes, hasIndex, mb } = describeUploadSelection(files);
+  uploadState.files = files;
+  uploadState.totalBytes = totalBytes;
+  uploadState.hasIndex = hasIndex;
+  if (uploadZoneMeta) {
+    uploadZoneMeta.textContent = `已选择 ${files.length} 个文件，约 ${mb} MB${hasIndex ? "" : "（缺少 index.html）"}`;
+  }
+  if (!hasIndex) {
+    setUploadStatusText("缺少 index.html，请检查文件夹", true);
+    return;
+  }
+  if (totalBytes > 100 * 1024 * 1024) {
+    setUploadStatusText("文件夹总大小超过 100MB", true);
+    return;
+  }
+  setHostedLinkMode(true);
+  await startHostedUpload(files);
 }
 
 function toggleTab(tabName) {
@@ -2785,10 +2921,40 @@ adminExperimentsRefresh?.addEventListener("click", async () => {
   await loadAdminExperimentList();
 });
 
+uploadZone?.addEventListener("click", () => {
+  uploadFolderInput?.click();
+});
+
+uploadZone?.addEventListener("dragover", (event) => {
+  event.preventDefault();
+  uploadZone.classList.add("dragging");
+});
+
+uploadZone?.addEventListener("dragleave", () => {
+  uploadZone.classList.remove("dragging");
+});
+
+uploadZone?.addEventListener("drop", async (event) => {
+  event.preventDefault();
+  uploadZone.classList.remove("dragging");
+  await handleUploadSelection(event.dataTransfer?.files);
+});
+
+uploadFolderInput?.addEventListener("change", async (event) => {
+  await handleUploadSelection(event.target?.files);
+});
+
 
 locationSelect?.addEventListener("change", () => {
   const isOnline = locationSelect.value === "在线";
   locationLinkField?.classList.toggle("hidden", !isOnline);
+  hostedUploadField?.classList.toggle("hidden", !isOnline);
+  downloadPolicyField?.classList.toggle("hidden", !isOnline);
+  allowDownloadField?.classList.toggle("hidden", !isOnline);
+  if (!isOnline) {
+    resetUploadState();
+    setHostedLinkMode(false);
+  }
   const isCustom = locationSelect.value === "其他";
   locationCustomField?.classList.toggle("hidden", !isCustom);
   accessControlModeField?.classList.toggle("hidden", !isOnline);
@@ -3050,16 +3216,37 @@ adminExperimentForm?.addEventListener("submit", async (event) => {
       return;
     }
 
+    const hasHostedUpload = uploadState.files.length > 0;
+    if (location === "在线") {
+      if (hasHostedUpload) {
+        if (!uploadState.ready || !uploadState.prefix) {
+          setStatus(adminExperimentStatus, "上传尚未完成", true);
+          return;
+        }
+        if (!uploadState.hasIndex) {
+          setStatus(adminExperimentStatus, "缺少 index.html，无法发布", true);
+          return;
+        }
+      } else if (!payload.location_link) {
+        setStatus(adminExperimentStatus, "请填写实验链接或上传实验文件夹", true);
+        return;
+      }
+    }
+
     const scheduleRequiredValue = payload.schedule_required === "yes";
     const schedulePayload = scheduleRequiredValue ? buildSchedulePayload() : [];
     const allowedDevices = getCheckedValues(adminExperimentForm, "allowed_devices");
     const accessMode = location === "在线" ? (payload.access_control_mode || "none") : "none";
+    if (hasHostedUpload && accessMode === "proxy") {
+      setStatus(adminExperimentStatus, "在线上传不支持代理模式", true);
+      return;
+    }
     const requestPayload = {
       contact_phone: payload.contact_phone,
       name: payload.name,
       type: payload.type,
       location,
-      location_link: payload.location_link,
+      location_link: hasHostedUpload ? "" : payload.location_link,
       description: payload.description,
       notes: payload.notes,
       duration_min: payload.duration_min,
@@ -3075,6 +3262,12 @@ adminExperimentForm?.addEventListener("submit", async (event) => {
       browser_info: navigator.userAgent || "",
     };
 
+    if (hasHostedUpload) {
+      requestPayload.hosted_prefix = uploadState.prefix;
+      requestPayload.download_policy = downloadPolicy?.value || "upload_only";
+      requestPayload.allow_download = allowDownload?.value !== "no";
+    }
+
     const result = await apiRequest("/admin/experiment/create", {
       method: "POST",
       json: requestPayload,
@@ -3083,6 +3276,8 @@ adminExperimentForm?.addEventListener("submit", async (event) => {
     setStatus(adminExperimentStatus, `发布成功，实验编号 ${result.experiment_uid}`);
     scheduleState.slots = [];
     adminExperimentForm.reset();
+    resetUploadState();
+    setHostedLinkMode(false);
     scheduleEditor?.classList.add("hidden");
     await loadAdminExperiments();
     await loadAdminExperimentList();

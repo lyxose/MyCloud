@@ -783,6 +783,8 @@ body.is-admin .split {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  max-height: 560px;
+  overflow-y: auto;
 }
 
 .admin-experiment-card {
@@ -936,6 +938,54 @@ body.is-admin .split {
 .note-input {
   min-height: 2.4rem;
   resize: vertical;
+}
+
+.upload-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  grid-column: 1 / -1;
+}
+
+.upload-title {
+  font-weight: 600;
+}
+
+.upload-zone {
+  border: 2px dashed rgba(58, 123, 213, 0.4);
+  border-radius: 14px;
+  padding: 1rem;
+  text-align: center;
+  background: #f6f9ff;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.upload-zone.dragging {
+  border-color: var(--accent);
+  background: #eaf1ff;
+  transform: translateY(-2px);
+}
+
+.upload-zone input {
+  display: none;
+}
+
+.upload-zone-text {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.upload-zone-meta {
+  margin-top: 0.4rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.upload-status {
+  min-height: 1.2rem;
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 .experiment-card.selected {
