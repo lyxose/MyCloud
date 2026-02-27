@@ -947,6 +947,65 @@ body.is-admin .split {
   grid-column: 1 / -1;
 }
 
+.upload-tabs {
+  display: flex;
+  gap: 0.6rem;
+  grid-column: 1 / -1;
+  margin-top: 0.2rem;
+}
+
+.mini-tab {
+  border: 1px solid rgba(58, 123, 213, 0.3);
+  background: #f3f7fd;
+  color: var(--muted);
+  padding: 0.4rem 1rem;
+  border-radius: 999px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.mini-tab.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: transparent;
+}
+
+.upload-panel {
+  grid-column: 1 / -1;
+}
+
+.script-pair {
+  display: grid;
+  gap: 1rem;
+  margin-top: 0.6rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.script-card {
+  border: 1px solid rgba(58, 123, 213, 0.2);
+  border-radius: 12px;
+  padding: 0.8rem;
+  background: #f8fbff;
+}
+
+.script-title {
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+}
+
+.script-code {
+  margin: 0;
+  padding: 0.6rem;
+  border-radius: 10px;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
 .upload-title {
   font-weight: 600;
 }

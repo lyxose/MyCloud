@@ -28,7 +28,108 @@ const uploadState = {
   hasIndex: false,
   uploading: false,
   ready: false,
+  mode: "link",
 };
+
+const TOKEN_SCRIPT_MASK = `<script>
+(function () {
+  const ACCESS_BASE = "https://exp.vaonline.dpdns.org";
+  const VERIFY_ENDPOINT = \`${ACCESS_BASE}/token/verify\`;
+  const token = new URLSearchParams(location.search).get("access_token");
+
+  const mask = document.createElement("div");
+  mask.style.position = "fixed";
+  mask.style.inset = "0";
+  mask.style.background = "#f6f7fb";
+  mask.style.color = "#1f2937";
+  mask.style.display = "flex";
+  mask.style.alignItems = "center";
+  mask.style.justifyContent = "center";
+  mask.style.zIndex = "999999";
+  mask.style.fontFamily = "Noto Sans SC, sans-serif";
+  mask.innerHTML = "<div style=\"text-align:center;max-width:420px;padding:24px\"><h2>正在验证实验访问</h2><p id=\"accessMsg\" style=\"color:#6b7280\">请稍候...</p></div>";
+  document.addEventListener("DOMContentLoaded", () => document.body.appendChild(mask));
+
+  async function verify() {
+    if (!token) {
+      update("未检测到访问令牌，请从预约入口进入实验。", true);
+      return false;
+    }
+    try {
+      const resp = await fetch(VERIFY_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        update(data.error || "访问令牌无效", true);
+        return false;
+      }
+      update("验证通过，正在进入实验...", false);
+      return true;
+    } catch {
+      update("验证失败，请检查网络后重试。", true);
+      return false;
+    }
+  }
+
+  function update(text, isError) {
+    const msg = document.getElementById("accessMsg");
+    if (!msg) return;
+    msg.textContent = text;
+    msg.style.color = isError ? "#b42318" : "#2563eb";
+  }
+
+  window.addEventListener("load", async () => {
+    const ok = await verify();
+    if (ok) {
+      setTimeout(() => mask.remove(), 200);
+    }
+  });
+})();
+</script>`;
+
+const TOKEN_SCRIPT_BLOCK = `<script>
+(function () {
+  const ACCESS_BASE = "https://exp.vaonline.dpdns.org";
+  const VERIFY_ENDPOINT = \`${ACCESS_BASE}/token/verify\`;
+  const token = new URLSearchParams(location.search).get("access_token");
+  document.documentElement.style.visibility = "hidden";
+
+  function showError(message) {
+    document.documentElement.innerHTML = "";
+    document.body.style.margin = "0";
+    document.body.style.fontFamily = "Noto Sans SC, sans-serif";
+    document.body.innerHTML = \`<div style=\\"min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f6f7fb;color:#1f2937\\"><div style=\\"max-width:420px;padding:24px;text-align:center\\"><h2>无法进入实验</h2><p style=\\"color:#b42318\\">${message}</p></div></div>\`;
+    document.documentElement.style.visibility = "visible";
+  }
+
+  async function verify() {
+    if (!token) {
+      showError("未检测到访问令牌，请从预约入口进入实验。");
+      return;
+    }
+    try {
+      const resp = await fetch(VERIFY_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        showError(data.error || "访问令牌无效");
+        return;
+      }
+      document.documentElement.style.visibility = "visible";
+    } catch {
+      showError("验证失败，请检查网络后重试。");
+    }
+  }
+
+  verify();
+})();
+</script>`;
 
 function resetUploadState() {
   uploadState.prefix = null;
@@ -46,6 +147,93 @@ function setUploadStatusText(text, isError = false) {
   if (!uploadStatus) return;
   uploadStatus.textContent = text;
   uploadStatus.style.color = isError ? "#b42318" : "";
+}
+
+function initTokenScriptHelp() {
+  if (tokenScriptMask) tokenScriptMask.textContent = TOKEN_SCRIPT_MASK;
+  if (tokenScriptBlock) tokenScriptBlock.textContent = TOKEN_SCRIPT_BLOCK;
+}
+
+function setUploadMode(mode) {
+  uploadState.mode = mode === "upload" ? "upload" : "link";
+  uploadTabs?.querySelectorAll(".mini-tab").forEach((tab) => {
+    tab.classList.toggle("active", tab.dataset.uploadTab === uploadState.mode);
+  });
+  uploadPanelLink?.classList.toggle("hidden", uploadState.mode !== "link");
+  uploadPanelUpload?.classList.toggle("hidden", uploadState.mode !== "upload");
+  setHostedLinkMode(uploadState.mode === "upload");
+  applyAccessModeRules(uploadState.mode === "upload");
+  updateTokenScriptHelp();
+}
+
+function updateTokenScriptHelp() {
+  if (!tokenScriptHelp) return;
+  const show = locationSelect?.value === "在线"
+    && uploadState.mode === "link"
+    && accessControlMode?.value === "token";
+  tokenScriptHelp.classList.toggle("hidden", !show);
+}
+
+function applyAccessModeRules(isUploadMode) {
+  if (!accessControlMode) return;
+  const proxyOption = Array.from(accessControlMode.options || []).find((opt) => opt.value === "proxy");
+  if (proxyOption) {
+    proxyOption.disabled = isUploadMode;
+    if (isUploadMode && accessControlMode.value === "proxy") {
+      accessControlMode.value = "token";
+    }
+  }
+  const tokenOption = Array.from(accessControlMode.options || []).find((opt) => opt.value === "token");
+  if (tokenOption) {
+    tokenOption.dataset.hint = isUploadMode
+      ? "拼接令牌：系统自动注入验证与一次性访问控制。"
+      : "拼接令牌：需要在实验页面 head 添加脚本校验 token。";
+  }
+  updateAccessControlHint(accessControlMode, accessControlHint);
+}
+
+async function getFilesFromDrop(event) {
+  const items = event.dataTransfer?.items;
+  if (!items || items.length === 0) return Array.from(event.dataTransfer?.files || []);
+  const entries = Array.from(items)
+    .map((item) => (item.webkitGetAsEntry ? item.webkitGetAsEntry() : null))
+    .filter(Boolean);
+  if (!entries.length) return Array.from(event.dataTransfer?.files || []);
+  const collected = [];
+  const walkEntry = (entry, basePath = "") => new Promise((resolve) => {
+    if (entry.isFile) {
+      entry.file((file) => {
+        Object.defineProperty(file, "webkitRelativePath", {
+          value: `${basePath}${file.name}`,
+        });
+        collected.push(file);
+        resolve();
+      });
+      return;
+    }
+    if (entry.isDirectory) {
+      const reader = entry.createReader();
+      const readEntries = () => {
+        reader.readEntries(async (entriesBatch) => {
+          if (!entriesBatch.length) {
+            resolve();
+            return;
+          }
+          for (const child of entriesBatch) {
+            await walkEntry(child, `${basePath}${entry.name}/`);
+          }
+          readEntries();
+        });
+      };
+      readEntries();
+      return;
+    }
+    resolve();
+  });
+  for (const entry of entries) {
+    await walkEntry(entry, "");
+  }
+  return collected;
 }
 
 function normalizeUploadPath(file) {
@@ -263,6 +451,9 @@ const scheduleSlotsRequired = document.getElementById("scheduleSlotsRequired");
 const locationSelect = document.getElementById("locationSelect");
 const locationLinkField = document.getElementById("locationLinkField");
 const locationCustomField = document.getElementById("locationCustomField");
+const uploadTabs = document.getElementById("uploadTabs");
+const uploadPanelLink = document.getElementById("uploadPanelLink");
+const uploadPanelUpload = document.getElementById("uploadPanelUpload");
 const hostedUploadField = document.getElementById("hostedUploadField");
 const uploadZone = document.getElementById("uploadZone");
 const uploadFolderInput = document.getElementById("uploadFolderInput");
@@ -276,6 +467,9 @@ const accessControlModeField = document.getElementById("accessControlModeField")
 const accessControlMode = document.getElementById("accessControlMode");
 const accessControlHint = document.getElementById("accessControlHint");
 const allowedDevicesField = document.getElementById("allowedDevicesField");
+const tokenScriptHelp = document.getElementById("tokenScriptHelp");
+const tokenScriptMask = document.getElementById("tokenScriptMask");
+const tokenScriptBlock = document.getElementById("tokenScriptBlock");
 
 const adminExperimentsSection = document.getElementById("adminExperiments");
 const adminExperimentList = document.getElementById("adminExperimentList");
@@ -388,7 +582,6 @@ function setHostedLinkMode(isHosted) {
   const linkInput = locationLinkField?.querySelector("input");
   if (!linkInput) return;
   if (isHosted) {
-    linkInput.value = "";
     linkInput.placeholder = "由系统生成";
     linkInput.disabled = true;
   } else {
@@ -406,6 +599,7 @@ async function handleUploadSelection(fileList) {
     setUploadStatusText("仅在线实验可上传", true);
     return;
   }
+  setUploadMode("upload");
   const { totalBytes, hasIndex, mb } = describeUploadSelection(files);
   uploadState.files = files;
   uploadState.totalBytes = totalBytes;
@@ -2282,6 +2476,20 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
             </select>
             <span class="hint" id="adminEditAccessControlHint">原链接：直接呈现/跳转原链接，被试将能在任意时刻/设备访问该链接。</span>
           </label>
+          <div class="info-card hidden" id="adminEditTokenScriptHelp">
+            <strong>拼接令牌需在实验页面 head 中添加脚本</strong>
+            <p class="hint">二选一：遮罩验证或直接阻断。</p>
+            <div class="script-pair">
+              <div class="script-card">
+                <div class="script-title">方案 A（遮罩验证，推荐）</div>
+                <pre class="script-code" id="adminEditTokenScriptMask"></pre>
+              </div>
+              <div class="script-card">
+                <div class="script-title">方案 B（直接阻断）</div>
+                <pre class="script-code" id="adminEditTokenScriptBlock"></pre>
+              </div>
+            </div>
+          </div>
           <fieldset class="checkbox-group" id="adminEditAllowedDevices">
             <legend>允许设备</legend>
             <label><input type="checkbox" name="allowed_devices" value="desktop" />电脑</label>
@@ -2350,6 +2558,9 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
   const editAccessControlMode = panel.querySelector("#adminEditAccessControlMode");
   const editAccessControlModeField = panel.querySelector("#adminEditAccessControlModeField");
   const editAccessControlHint = panel.querySelector("#adminEditAccessControlHint");
+  const editTokenScriptHelp = panel.querySelector("#adminEditTokenScriptHelp");
+  const editTokenScriptMask = panel.querySelector("#adminEditTokenScriptMask");
+  const editTokenScriptBlock = panel.querySelector("#adminEditTokenScriptBlock");
   const editAllowedDevices = panel.querySelector("#adminEditAllowedDevices");
   const editContactPhone = panel.querySelector("#adminEditContactPhone");
   const editDescription = panel.querySelector("#adminEditDescription");
@@ -2371,6 +2582,18 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
     }
   }
 
+  const accessConfig = safeJsonParse(experiment.access_control_config_json, null) || {};
+  const isHosted = accessConfig?.hosted === true;
+
+  const updateEditTokenHelp = () => {
+    if (editTokenScriptMask) editTokenScriptMask.textContent = TOKEN_SCRIPT_MASK;
+    if (editTokenScriptBlock) editTokenScriptBlock.textContent = TOKEN_SCRIPT_BLOCK;
+    const show = editLocation?.value === "在线"
+      && !isHosted
+      && editAccessControlMode?.value === "token";
+    editTokenScriptHelp?.classList.toggle("hidden", !show);
+  };
+
   const syncEditLocationFields = () => {
     if (!editLocation) return;
     const isOnline = editLocation.value === "在线";
@@ -2382,15 +2605,30 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
       editAccessControlMode.value = "none";
     }
     updateAccessControlHint(editAccessControlMode, editAccessControlHint);
+    updateEditTokenHelp();
   };
   syncEditLocationFields();
   editLocation?.addEventListener("change", syncEditLocationFields);
 
   if (editAccessControlMode) {
     editAccessControlMode.value = experiment.access_control_mode || "none";
+    const proxyOption = Array.from(editAccessControlMode.options || []).find((opt) => opt.value === "proxy");
+    if (proxyOption) {
+      proxyOption.disabled = isHosted;
+      if (isHosted && editAccessControlMode.value === "proxy") {
+        editAccessControlMode.value = "token";
+      }
+    }
+    const tokenOption = Array.from(editAccessControlMode.options || []).find((opt) => opt.value === "token");
+    if (tokenOption) {
+      tokenOption.dataset.hint = isHosted
+        ? "拼接令牌：系统自动注入验证与一次性访问控制。"
+        : "拼接令牌：需要在实验页面 head 添加脚本校验 token。";
+    }
     updateAccessControlHint(editAccessControlMode, editAccessControlHint);
     editAccessControlMode.addEventListener("change", () => {
       updateAccessControlHint(editAccessControlMode, editAccessControlHint);
+      updateEditTokenHelp();
     });
   }
   if (editAllowedDevices) {
@@ -2508,6 +2746,10 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
       const locationValue = editLocation?.value === "其他" ? editLocationCustom?.value : editLocation?.value;
       if (!locationValue) {
         setStatus(adminExperimentStatus, "请填写实验地点", true);
+        return;
+      }
+      if (isHosted && editAccessControlMode?.value === "proxy") {
+        setStatus(adminExperimentStatus, "在线上传不支持代理模式", true);
         return;
       }
       const allowedDevices = getCheckedValues(panel, "allowed_devices");
@@ -2937,23 +3179,34 @@ uploadZone?.addEventListener("dragleave", () => {
 uploadZone?.addEventListener("drop", async (event) => {
   event.preventDefault();
   uploadZone.classList.remove("dragging");
-  await handleUploadSelection(event.dataTransfer?.files);
+  const files = await getFilesFromDrop(event);
+  await handleUploadSelection(files);
 });
 
 uploadFolderInput?.addEventListener("change", async (event) => {
   await handleUploadSelection(event.target?.files);
 });
 
+uploadTabs?.querySelectorAll(".mini-tab").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    const mode = tab.dataset.uploadTab || "link";
+    setUploadMode(mode);
+  });
+});
+
 
 locationSelect?.addEventListener("change", () => {
   const isOnline = locationSelect.value === "在线";
-  locationLinkField?.classList.toggle("hidden", !isOnline);
-  hostedUploadField?.classList.toggle("hidden", !isOnline);
-  downloadPolicyField?.classList.toggle("hidden", !isOnline);
-  allowDownloadField?.classList.toggle("hidden", !isOnline);
+  uploadTabs?.classList.toggle("hidden", !isOnline);
   if (!isOnline) {
     resetUploadState();
     setHostedLinkMode(false);
+  }
+  if (isOnline) {
+    setUploadMode(uploadState.mode || "link");
+  } else {
+    uploadPanelLink?.classList.add("hidden");
+    uploadPanelUpload?.classList.add("hidden");
   }
   const isCustom = locationSelect.value === "其他";
   locationCustomField?.classList.toggle("hidden", !isCustom);
@@ -2962,9 +3215,11 @@ locationSelect?.addEventListener("change", () => {
     accessControlMode.value = "none";
   }
   updateAccessControlHint(accessControlMode, accessControlHint);
+  updateTokenScriptHelp();
 });
 accessControlMode?.addEventListener("change", () => {
   updateAccessControlHint(accessControlMode, accessControlHint);
+  updateTokenScriptHelp();
 });
 
 scheduleRequired?.addEventListener("change", () => {
@@ -3216,9 +3471,14 @@ adminExperimentForm?.addEventListener("submit", async (event) => {
       return;
     }
 
+    const useHostedUpload = uploadState.mode === "upload";
     const hasHostedUpload = uploadState.files.length > 0;
     if (location === "在线") {
-      if (hasHostedUpload) {
+      if (useHostedUpload) {
+        if (!hasHostedUpload) {
+          setStatus(adminExperimentStatus, "请先上传实验文件夹", true);
+          return;
+        }
         if (!uploadState.ready || !uploadState.prefix) {
           setStatus(adminExperimentStatus, "上传尚未完成", true);
           return;
@@ -3237,7 +3497,7 @@ adminExperimentForm?.addEventListener("submit", async (event) => {
     const schedulePayload = scheduleRequiredValue ? buildSchedulePayload() : [];
     const allowedDevices = getCheckedValues(adminExperimentForm, "allowed_devices");
     const accessMode = location === "在线" ? (payload.access_control_mode || "none") : "none";
-    if (hasHostedUpload && accessMode === "proxy") {
+    if (useHostedUpload && accessMode === "proxy") {
       setStatus(adminExperimentStatus, "在线上传不支持代理模式", true);
       return;
     }
@@ -3246,7 +3506,7 @@ adminExperimentForm?.addEventListener("submit", async (event) => {
       name: payload.name,
       type: payload.type,
       location,
-      location_link: hasHostedUpload ? "" : payload.location_link,
+      location_link: useHostedUpload ? "" : payload.location_link,
       description: payload.description,
       notes: payload.notes,
       duration_min: payload.duration_min,
@@ -3262,7 +3522,7 @@ adminExperimentForm?.addEventListener("submit", async (event) => {
       browser_info: navigator.userAgent || "",
     };
 
-    if (hasHostedUpload) {
+    if (useHostedUpload) {
       requestPayload.hosted_prefix = uploadState.prefix;
       requestPayload.download_policy = downloadPolicy?.value || "upload_only";
       requestPayload.allow_download = allowDownload?.value !== "no";
@@ -3277,7 +3537,7 @@ adminExperimentForm?.addEventListener("submit", async (event) => {
     scheduleState.slots = [];
     adminExperimentForm.reset();
     resetUploadState();
-    setHostedLinkMode(false);
+    setUploadMode("link");
     scheduleEditor?.classList.add("hidden");
     await loadAdminExperiments();
     await loadAdminExperimentList();
@@ -3362,6 +3622,9 @@ logoutBtn.addEventListener("click", async () => {
   state.adminExperiments = [];
   renderProfile();
 });
+
+initTokenScriptHelp();
+setUploadMode(uploadState.mode);
 
 loadProfile();
 loadUnits();

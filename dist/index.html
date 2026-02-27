@@ -388,34 +388,42 @@
                       自定义地点
                       <input name="location_custom" />
                     </label>
-                    <label id="locationLinkField" class="hidden">
-                      实验链接
-                      <input name="location_link" />
-                    </label>
-                    <div class="upload-block hidden" id="hostedUploadField">
-                      <span class="upload-title">在线实验文件夹（可选）</span>
-                      <div class="upload-zone" id="uploadZone">
-                        <input type="file" id="uploadFolderInput" webkitdirectory directory multiple />
-                        <div class="upload-zone-text">拖拽文件夹到这里，或点击选择文件夹</div>
-                        <div class="upload-zone-meta" id="uploadZoneMeta">需包含 index.html</div>
-                      </div>
-                      <div class="upload-status" id="uploadStatus"></div>
-                      <p class="hint">上传后自动生成在线链接；若不上传请填写实验链接。</p>
+                    <div class="upload-tabs hidden" id="uploadTabs">
+                      <button type="button" class="mini-tab active" data-upload-tab="link">实验链接</button>
+                      <button type="button" class="mini-tab" data-upload-tab="upload">在线实验文件夹</button>
                     </div>
-                    <label id="downloadPolicyField" class="hidden">
-                      数据保存方式
-                      <select name="download_policy" id="downloadPolicy">
-                        <option value="upload_only">仅上传到服务器</option>
-                        <option value="download_and_upload">下载并上传（双保险）</option>
-                      </select>
-                    </label>
-                    <label id="allowDownloadField" class="hidden">
-                      允许本地下载数据
-                      <select name="allow_download" id="allowDownload">
-                        <option value="yes">允许</option>
-                        <option value="no">不允许</option>
-                      </select>
-                    </label>
+                    <div class="upload-panel" id="uploadPanelLink">
+                      <label id="locationLinkField">
+                        实验链接
+                        <input name="location_link" />
+                      </label>
+                    </div>
+                    <div class="upload-panel hidden" id="uploadPanelUpload">
+                      <div class="upload-block" id="hostedUploadField">
+                        <span class="upload-title">在线实验文件夹</span>
+                        <div class="upload-zone" id="uploadZone">
+                          <input type="file" id="uploadFolderInput" webkitdirectory directory multiple />
+                          <div class="upload-zone-text">拖拽文件夹到这里，或点击选择文件夹</div>
+                          <div class="upload-zone-meta" id="uploadZoneMeta">需包含 index.html</div>
+                        </div>
+                        <div class="upload-status" id="uploadStatus"></div>
+                        <p class="hint">上传后自动生成在线链接。</p>
+                      </div>
+                      <label id="downloadPolicyField">
+                        数据保存方式
+                        <select name="download_policy" id="downloadPolicy">
+                          <option value="upload_only">仅上传到服务器</option>
+                          <option value="download_and_upload">下载并上传（双保险）</option>
+                        </select>
+                      </label>
+                      <label id="allowDownloadField">
+                        允许本地下载数据
+                        <select name="allow_download" id="allowDownload">
+                          <option value="yes">允许</option>
+                          <option value="no">不允许</option>
+                        </select>
+                      </label>
+                    </div>
                     <label id="accessControlModeField" class="hidden">
                       在线访问控制
                       <select name="access_control_mode" id="accessControlMode">
@@ -425,6 +433,20 @@
                       </select>
                       <span class="hint" id="accessControlHint">原链接：直接呈现/跳转原链接，被试将能在任意时刻/设备访问该链接。</span>
                     </label>
+                    <div class="info-card hidden" id="tokenScriptHelp">
+                      <strong>拼接令牌需在实验页面 head 中添加脚本</strong>
+                      <p class="hint">二选一：遮罩验证或直接阻断。</p>
+                      <div class="script-pair">
+                        <div class="script-card">
+                          <div class="script-title">方案 A（遮罩验证，推荐）</div>
+                          <pre class="script-code" id="tokenScriptMask"></pre>
+                        </div>
+                        <div class="script-card">
+                          <div class="script-title">方案 B（直接阻断）</div>
+                          <pre class="script-code" id="tokenScriptBlock"></pre>
+                        </div>
+                      </div>
+                    </div>
                     <fieldset class="checkbox-group" id="allowedDevicesField">
                       <legend>允许设备</legend>
                       <label><input type="checkbox" name="allowed_devices" value="desktop" checked />电脑</label>
