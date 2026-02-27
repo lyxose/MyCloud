@@ -174,8 +174,9 @@ function initTokenScriptHelp() {
 }
 
 function setUploadMode(mode) {
-  if (locationSelect?.value !== "在线") {
-    uploadTabs?.classList.add("hidden");
+  const isOnline = locationSelect?.value === "在线";
+  uploadTabs?.classList.toggle("hidden", !isOnline);
+  if (!isOnline) {
     uploadPanelLink?.classList.add("hidden");
     uploadPanelUpload?.classList.add("hidden");
     return;
