@@ -499,7 +499,7 @@ textarea:focus {
 }
 
 .admin-tabs .tab.active {
-  background: linear-gradient(180deg, #ffffff 0%, #f4f8ff 100%);
+  background: linear-gradient(180deg, #f4f8ff 0%, #ffffff 100%);
   color: var(--text);
   border-bottom: 1px solid #ffffff;
   border-top: 3px solid var(--accent);
@@ -985,7 +985,7 @@ body.is-admin .split {
 }
 
 .mini-tab.active {
-  background: linear-gradient(180deg, #ffffff 0%, #f4f8ff 100%);
+  background: linear-gradient(180deg, #f4f8ff 0%, #ffffff 100%);
   color: var(--text);
   border-color: #c9d6ea;
   border-top: 3px solid var(--accent);
