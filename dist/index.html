@@ -179,7 +179,7 @@
                   <div class="autocomplete-list" id="majorSuggestions"></div>
                 </div>
                 <input type="hidden" name="majors_json" id="majorHidden" />
-                <span class="hint">可多选；可填写；选择“无”将清空其他选项</span>
+                <span class="hint">可多选；仅可新增不可删除；选择“无”将清空其他选项</span>
               </label>
               <label>
                 职业
@@ -350,6 +350,20 @@
                   </div>
                 </div>
                 <div class="admin-right">
+                  <div class="info-card hidden" id="rootGrantPanel">
+                    <strong>Root 专用：授予主试权限</strong>
+                    <form id="rootGrantForm" class="inline-two">
+                      <label>
+                        目标被试ID
+                        <input name="user_uid" id="rootGrantUid" placeholder="U000123" />
+                      </label>
+                      <label>
+                        &nbsp;
+                        <button type="submit" class="ghost" id="rootGrantBtn">设为主试（admin）</button>
+                      </label>
+                    </form>
+                    <p class="form-note" id="rootGrantStatus"></p>
+                  </div>
                   <form id="adminExperimentForm" class="form-grid">
                     <label>
                       主试联系方式（手机号）

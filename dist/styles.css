@@ -478,7 +478,7 @@ textarea:focus {
   scroll-behavior: smooth;
   scrollbar-width: none;
   position: relative;
-  border-bottom: 1px solid #c9d6ea;
+  border-bottom: none;
 }
 
 .admin-tabs::-webkit-scrollbar {
@@ -532,6 +532,17 @@ textarea:focus {
   flex: 1;
 }
 
+@media (min-width: 980px) {
+  .admin-layout {
+    grid-template-columns: minmax(300px, 0.95fr) minmax(420px, 1.25fr);
+  }
+
+  .admin-left .info-card {
+    max-height: none;
+    height: 100%;
+  }
+}
+
 .info-trigger {
   align-self: flex-start;
 }
@@ -545,6 +556,10 @@ textarea:focus {
   color: var(--muted);
   overflow-y: auto;
   max-height: 320px;
+}
+
+#rootGrantPanel {
+  max-height: none;
 }
 
 .info-card strong {

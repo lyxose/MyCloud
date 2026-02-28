@@ -459,6 +459,9 @@ const adminPanelNew = document.getElementById("adminPanelNew");
 const adminExperimentForm = document.getElementById("adminExperimentForm");
 const adminExperimentStatus = document.getElementById("adminExperimentStatus");
 const adminContactPhone = document.getElementById("adminContactPhone");
+const rootGrantPanel = document.getElementById("rootGrantPanel");
+const rootGrantForm = document.getElementById("rootGrantForm");
+const rootGrantStatus = document.getElementById("rootGrantStatus");
 const adminConditions = document.getElementById("adminConditions");
 const adminQuota = document.getElementById("adminQuota");
 const quotaHelpBubble = document.getElementById("quotaHelpBubble");
@@ -658,6 +661,7 @@ function setProfilePaneCollapsed(collapsed) {
 
 function applyRoleLayout() {
   const isAdmin = state.role === "admin" || state.role === "root";
+  const isRoot = state.role === "root";
   document.body.classList.toggle("is-admin", isAdmin);
   profilePane?.classList.toggle("hidden", isAdmin);
   experimentForm?.classList.toggle("hidden", isAdmin);
@@ -666,8 +670,20 @@ function applyRoleLayout() {
   adminArea?.classList.toggle("hidden", !isAdmin);
   adminExperimentsSection?.classList.toggle("hidden", !isAdmin);
   consentSection?.classList.toggle("hidden", isAdmin);
-  rootPasswordSection?.classList.toggle("hidden", state.role !== "root");
+  rootPasswordSection?.classList.toggle("hidden", !isRoot);
+  rootGrantPanel?.classList.toggle("hidden", !isRoot);
   contactPanel?.classList.toggle("hidden", !isAdmin);
+  if (!isRoot && rootPasswordSection) {
+    rootPasswordSection.querySelectorAll("input").forEach((input) => {
+      input.value = "";
+      input.disabled = true;
+    });
+  }
+  if (isRoot && rootPasswordSection) {
+    rootPasswordSection.querySelectorAll("input").forEach((input) => {
+      input.disabled = false;
+    });
+  }
 }
 
 function populateProfileForm(profile) {
@@ -2027,13 +2043,6 @@ function renderMajorTags() {
     const tag = document.createElement("span");
     tag.className = "multi-tag";
     tag.textContent = major;
-    const removeBtn = document.createElement("button");
-    removeBtn.type = "button";
-    removeBtn.textContent = "×";
-    removeBtn.addEventListener("click", () => {
-      removeMajor(major);
-    });
-    tag.appendChild(removeBtn);
     majorTags.appendChild(tag);
   });
 }
@@ -2064,11 +2073,8 @@ function addMajor(value) {
   renderMajorSuggestions("");
 }
 
-function removeMajor(value) {
-  state.selectedMajors = (state.selectedMajors || []).filter((item) => item !== value);
-  syncMajorsHidden();
-  renderMajorTags();
-  renderMajorSuggestions("");
+function removeMajor() {
+  return;
 }
 
 function renderMajorSuggestions(query = "") {
@@ -3143,6 +3149,19 @@ profileToggle?.addEventListener("click", () => {
 });
 
 changePasswordBtn?.addEventListener("click", () => {
+  const isRoot = state.role === "root";
+  rootPasswordSection?.classList.toggle("hidden", !isRoot);
+  if (!isRoot && rootPasswordSection) {
+    rootPasswordSection.querySelectorAll("input").forEach((input) => {
+      input.value = "";
+      input.disabled = true;
+    });
+  }
+  if (isRoot && rootPasswordSection) {
+    rootPasswordSection.querySelectorAll("input").forEach((input) => {
+      input.disabled = false;
+    });
+  }
   passwordPanel.classList.toggle("hidden");
 });
 
@@ -3435,6 +3454,10 @@ passwordForm?.addEventListener("submit", async (event) => {
   setStatus(passwordStatus, "提交中...");
   try {
     const payload = toJsonForm(passwordForm);
+    if (state.role !== "root") {
+      delete payload.target_user_uid;
+      delete payload.root_password;
+    }
     if (payload.new_password !== payload.new_password_confirm) {
       setStatus(passwordStatus, "两次输入的密码不一致", true);
       return;
@@ -3466,6 +3489,31 @@ passwordForm?.addEventListener("submit", async (event) => {
     passwordForm.reset();
   } catch (error) {
     setStatus(passwordStatus, error.message, true);
+  }
+});
+
+rootGrantForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (state.role !== "root") {
+    setStatus(rootGrantStatus, "仅 root 可执行此操作", true);
+    return;
+  }
+  const payload = toJsonForm(rootGrantForm);
+  const userUid = String(payload.user_uid || "").trim().toUpperCase();
+  if (!/^U\d{6}$/.test(userUid)) {
+    setStatus(rootGrantStatus, "被试ID格式应为 U000123", true);
+    return;
+  }
+  setStatus(rootGrantStatus, "提交中...");
+  try {
+    await apiRequest("/admin/create-admin", {
+      method: "POST",
+      json: { user_uid: userUid },
+    });
+    setStatus(rootGrantStatus, `已将 ${userUid} 设为主试`);
+    rootGrantForm.reset();
+  } catch (error) {
+    setStatus(rootGrantStatus, error.message, true);
   }
 });
 
