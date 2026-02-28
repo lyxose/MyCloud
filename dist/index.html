@@ -104,9 +104,32 @@
               <p id="profileMeta"></p>
             </div>
             <div class="profile-actions">
+              <button id="rootGrantToggleBtn" class="ghost hidden">主试赋权</button>
               <button id="changePasswordBtn" class="ghost">更新密码</button>
               <button id="logoutBtn" class="ghost">退出登录</button>
             </div>
+          </div>
+
+          <div id="rootGrantPanel" class="password-panel hidden">
+            <div class="password-panel-header">
+              <h4>Root 专用：主试赋权</h4>
+              <button type="button" class="ghost" id="rootGrantPanelClose">关闭</button>
+            </div>
+            <form id="rootGrantForm" class="form-grid">
+              <label>
+                操作
+                <select name="action" id="rootGrantAction">
+                  <option value="grant">设为主试（admin）</option>
+                  <option value="revoke">恢复为被试（user）</option>
+                </select>
+              </label>
+              <label>
+                目标被试ID
+                <input name="user_uid" id="rootGrantUid" placeholder="U000123" />
+              </label>
+              <button type="submit" class="ghost" id="rootGrantBtn">确认执行</button>
+              <p class="form-note" id="rootGrantStatus"></p>
+            </form>
           </div>
 
           <div id="passwordPanel" class="password-panel hidden">
@@ -350,20 +373,6 @@
                   </div>
                 </div>
                 <div class="admin-right">
-                  <div class="info-card hidden" id="rootGrantPanel">
-                    <strong>Root 专用：授予主试权限</strong>
-                    <form id="rootGrantForm" class="inline-two">
-                      <label>
-                        目标被试ID
-                        <input name="user_uid" id="rootGrantUid" placeholder="U000123" />
-                      </label>
-                      <label>
-                        &nbsp;
-                        <button type="submit" class="ghost" id="rootGrantBtn">设为主试（admin）</button>
-                      </label>
-                    </form>
-                    <p class="form-note" id="rootGrantStatus"></p>
-                  </div>
                   <form id="adminExperimentForm" class="form-grid">
                     <label>
                       主试联系方式（手机号）

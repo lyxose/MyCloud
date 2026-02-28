@@ -190,6 +190,7 @@ function setUploadMode(mode) {
   setHostedLinkMode(uploadState.mode === "upload");
   applyAccessModeRules(uploadState.mode === "upload");
   updateTokenScriptHelp();
+  syncAdminHelpCardHeight();
 }
 
 function updateTokenScriptHelp() {
@@ -444,11 +445,13 @@ const majorTags = document.getElementById("majorTags");
 const majorHidden = document.getElementById("majorHidden");
 
 const changePasswordBtn = document.getElementById("changePasswordBtn");
+const rootGrantToggleBtn = document.getElementById("rootGrantToggleBtn");
 const passwordPanel = document.getElementById("passwordPanel");
 const passwordPanelClose = document.getElementById("passwordPanelClose");
 const passwordForm = document.getElementById("passwordForm");
 const passwordStatus = document.getElementById("passwordStatus");
 const rootPasswordSection = document.getElementById("rootPasswordSection");
+const rootGrantPanelClose = document.getElementById("rootGrantPanelClose");
 const contactPanel = document.getElementById("contactPanel");
 const contactForm = document.getElementById("contactForm");
 const contactStatus = document.getElementById("contactStatus");
@@ -670,20 +673,19 @@ function applyRoleLayout() {
   adminArea?.classList.toggle("hidden", !isAdmin);
   adminExperimentsSection?.classList.toggle("hidden", !isAdmin);
   consentSection?.classList.toggle("hidden", isAdmin);
+  rootGrantToggleBtn?.classList.toggle("hidden", !isRoot);
   rootPasswordSection?.classList.toggle("hidden", !isRoot);
-  rootGrantPanel?.classList.toggle("hidden", !isRoot);
   contactPanel?.classList.toggle("hidden", !isAdmin);
   if (!isRoot && rootPasswordSection) {
     rootPasswordSection.querySelectorAll("input").forEach((input) => {
       input.value = "";
-      input.disabled = true;
     });
   }
-  if (isRoot && rootPasswordSection) {
-    rootPasswordSection.querySelectorAll("input").forEach((input) => {
-      input.disabled = false;
-    });
+  if (!isRoot) {
+    rootGrantPanel?.classList.add("hidden");
+    rootGrantForm?.reset();
   }
+  syncAdminHelpCardHeight();
 }
 
 function populateProfileForm(profile) {
@@ -907,6 +909,36 @@ function getAdminEarliestSlotDate() {
 
 let scheduleResizeObserver = null;
 let adminScheduleResizeObserver = null;
+let adminHelpHeightObserver = null;
+
+function syncAdminHelpCardHeight() {
+  if (!quotaHelpBubble || !adminExperimentForm) return;
+  if (window.innerWidth < 980) {
+    quotaHelpBubble.style.height = "";
+    quotaHelpBubble.style.maxHeight = "";
+    return;
+  }
+  const leftCol = quotaHelpBubble.closest(".admin-left");
+  if (!leftCol) return;
+  const leftRect = leftCol.getBoundingClientRect();
+  const bubbleRect = quotaHelpBubble.getBoundingClientRect();
+  const rightHeight = adminExperimentForm.getBoundingClientRect().height;
+  const usedTop = bubbleRect.top - leftRect.top;
+  const target = Math.max(180, Math.floor(rightHeight - usedTop));
+  quotaHelpBubble.style.height = `${target}px`;
+  quotaHelpBubble.style.maxHeight = `${target}px`;
+}
+
+function attachAdminHelpHeightObserver() {
+  if (!adminExperimentForm || adminHelpHeightObserver || typeof ResizeObserver === "undefined") return;
+  adminHelpHeightObserver = new ResizeObserver(() => {
+    syncAdminHelpCardHeight();
+  });
+  adminHelpHeightObserver.observe(adminExperimentForm);
+  const leftCol = quotaHelpBubble?.closest(".admin-left");
+  if (leftCol) adminHelpHeightObserver.observe(leftCol);
+  window.addEventListener("resize", syncAdminHelpCardHeight);
+}
 
 function attachScheduleResizeObserver() {
   if (!scheduleGrid || scheduleResizeObserver) return;
@@ -3154,15 +3186,18 @@ changePasswordBtn?.addEventListener("click", () => {
   if (!isRoot && rootPasswordSection) {
     rootPasswordSection.querySelectorAll("input").forEach((input) => {
       input.value = "";
-      input.disabled = true;
-    });
-  }
-  if (isRoot && rootPasswordSection) {
-    rootPasswordSection.querySelectorAll("input").forEach((input) => {
-      input.disabled = false;
     });
   }
   passwordPanel.classList.toggle("hidden");
+});
+
+rootGrantToggleBtn?.addEventListener("click", () => {
+  if (state.role !== "root") return;
+  rootGrantPanel?.classList.toggle("hidden");
+});
+
+rootGrantPanelClose?.addEventListener("click", () => {
+  rootGrantPanel?.classList.add("hidden");
 });
 
 passwordPanelClose?.addEventListener("click", () => {
@@ -3267,6 +3302,7 @@ locationSelect?.addEventListener("change", () => {
   }
   updateAccessControlHint(accessControlMode, accessControlHint);
   updateTokenScriptHelp();
+  syncAdminHelpCardHeight();
 });
 accessControlMode?.addEventListener("change", () => {
   updateAccessControlHint(accessControlMode, accessControlHint);
@@ -3276,6 +3312,7 @@ accessControlMode?.addEventListener("change", () => {
 scheduleRequired?.addEventListener("change", () => {
   scheduleEditor?.classList.toggle("hidden", scheduleRequired.value !== "yes");
   scheduleSlotsRequiredField?.classList.toggle("hidden", scheduleRequired.value !== "yes");
+  syncAdminHelpCardHeight();
 });
 
 schedulePrev?.addEventListener("click", () => {
@@ -3499,6 +3536,7 @@ rootGrantForm?.addEventListener("submit", async (event) => {
     return;
   }
   const payload = toJsonForm(rootGrantForm);
+  const action = payload.action === "revoke" ? "revoke" : "grant";
   const userUid = String(payload.user_uid || "").trim().toUpperCase();
   if (!/^U\d{6}$/.test(userUid)) {
     setStatus(rootGrantStatus, "被试ID格式应为 U000123", true);
@@ -3506,11 +3544,13 @@ rootGrantForm?.addEventListener("submit", async (event) => {
   }
   setStatus(rootGrantStatus, "提交中...");
   try {
-    await apiRequest("/admin/create-admin", {
+    await apiRequest(action === "grant" ? "/admin/create-admin" : "/admin/revoke-admin", {
       method: "POST",
       json: { user_uid: userUid },
     });
-    setStatus(rootGrantStatus, `已将 ${userUid} 设为主试`);
+    setStatus(rootGrantStatus, action === "grant"
+      ? `已将 ${userUid} 设为主试`
+      : `已将 ${userUid} 恢复为被试`);
     rootGrantForm.reset();
   } catch (error) {
     setStatus(rootGrantStatus, error.message, true);
@@ -3713,6 +3753,8 @@ loadUnits();
 loadMajors();
 renderScheduleGrid();
 attachScheduleResizeObserver();
+attachAdminHelpHeightObserver();
+syncAdminHelpCardHeight();
 
 if (window.matchMedia && window.matchMedia("(orientation: portrait)").matches) {
   setProfilePaneCollapsed(true);

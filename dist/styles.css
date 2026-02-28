@@ -558,10 +558,6 @@ textarea:focus {
   max-height: 320px;
 }
 
-#rootGrantPanel {
-  max-height: none;
-}
-
 .info-card strong {
   color: var(--text);
   display: block;
@@ -921,6 +917,10 @@ body.is-admin .split {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 1rem;
+}
+
+.inline-two.hidden {
+  display: none;
 }
 
 .experiment-list {
