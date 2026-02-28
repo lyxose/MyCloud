@@ -1209,6 +1209,9 @@ function mergeOverlappingSlots(stateRef) {
 
 let slotActionMenu = null;
 let slotActionMenuCloseHandler = null;
+let slotNudgeOverlay = null;
+let slotNudgeInterval = null;
+let slotNudgeContext = null;
 
 function closeSlotActionMenu() {
   if (!slotActionMenu) return;
@@ -1245,13 +1248,98 @@ function openSlotActionMenu(x, y, actions) {
   document.addEventListener("touchstart", slotActionMenuCloseHandler, { passive: true });
 }
 
-function startTouchDrag(slot, stateRef, renderFn, startY) {
-  let dragStartY = startY;
+function applySlotNudge(delta) {
+  if (!slotNudgeContext?.slot || !slotNudgeContext?.renderFn || !slotNudgeContext?.stateRef) return;
+  const { slot, renderFn, stateRef, mode, edge } = slotNudgeContext;
+  const minDuration = 10;
+  if (mode === "resize") {
+    if (edge === "top") {
+      let nextStart = Math.max(0, Math.min(slot.endMin - minDuration, slot.startMin + delta));
+      if (slot.date === formatLocalDate(new Date())) {
+        const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+        if (nextStart < nowMin) nextStart = nowMin;
+      }
+      slot.startMin = nextStart;
+    } else {
+      let nextEnd = Math.max(slot.startMin + minDuration, Math.min(1440, slot.endMin + delta));
+      slot.endMin = nextEnd;
+    }
+  } else {
+    const duration = slot.endMin - slot.startMin;
+    let nextStart = Math.max(0, Math.min(1440 - duration, slot.startMin + delta));
+    if (slot.date === formatLocalDate(new Date())) {
+      const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+      if (slot.startMin >= nowMin && nextStart < nowMin) nextStart = nowMin;
+    }
+    slot.startMin = nextStart;
+    slot.endMin = nextStart + duration;
+  }
+  renderFn();
+}
+
+function hideSlotNudgeControls() {
+  if (slotNudgeInterval) {
+    clearInterval(slotNudgeInterval);
+    slotNudgeInterval = null;
+  }
+  if (slotNudgeOverlay) slotNudgeOverlay.classList.add("hidden");
+  slotNudgeContext = null;
+}
+
+function showSlotNudgeControls(context) {
+  slotNudgeContext = context;
+  if (!slotNudgeOverlay) {
+    const overlay = document.createElement("div");
+    overlay.className = "slot-nudge-overlay hidden";
+    overlay.innerHTML = `
+      <button type="button" class="ghost" data-nudge="up">▲</button>
+      <button type="button" class="ghost" data-nudge="down">▼</button>
+      <button type="button" class="ghost" data-nudge="close">×</button>
+    `;
+    const startRepeat = (delta) => {
+      applySlotNudge(delta);
+      if (slotNudgeInterval) clearInterval(slotNudgeInterval);
+      slotNudgeInterval = setInterval(() => applySlotNudge(delta), 120);
+    };
+    const stopRepeat = () => {
+      if (slotNudgeInterval) {
+        clearInterval(slotNudgeInterval);
+        slotNudgeInterval = null;
+      }
+    };
+    overlay.querySelector('[data-nudge="up"]')?.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      startRepeat(-1);
+    });
+    overlay.querySelector('[data-nudge="down"]')?.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      startRepeat(1);
+    });
+    overlay.querySelector('[data-nudge="close"]')?.addEventListener("click", () => {
+      hideSlotNudgeControls();
+    });
+    document.addEventListener("pointerup", stopRepeat, { passive: true });
+    document.addEventListener("pointercancel", stopRepeat, { passive: true });
+    document.body.appendChild(overlay);
+    slotNudgeOverlay = overlay;
+  }
+  slotNudgeOverlay.classList.remove("hidden");
+}
+
+function startTouchDrag(slot, stateRef, renderFn) {
+  let dragStartY = null;
   let dragStartMin = slot.startMin;
   let dragEndMin = slot.endMin;
+  showSlotNudgeControls({ slot, stateRef, renderFn, mode: "move", edge: null });
   const onMove = (event) => {
     const touch = event.touches[0];
     if (!touch) return;
+    if (dragStartY === null) {
+      dragStartY = touch.clientY;
+      dragStartMin = slot.startMin;
+      dragEndMin = slot.endMin;
+      return;
+    }
     const delta = touch.clientY - dragStartY;
     const step = Math.round(delta / (PX_PER_MIN * 10)) * 10;
     const duration = dragEndMin - dragStartMin;
@@ -1275,8 +1363,8 @@ function startTouchDrag(slot, stateRef, renderFn, startY) {
   document.addEventListener("touchend", onEnd);
 }
 
-function startTouchResize(slotEl, slot, stateRef, renderFn, startY) {
-  let resizeEdge = null;
+function startTouchResize(slotEl, slot, stateRef, renderFn, startY, preferredEdge = null) {
+  let resizeEdge = preferredEdge;
   const body = slotEl.closest(".schedule-day-body");
   if (!body) return;
   const bodyTop = body.getBoundingClientRect().top;
@@ -1287,6 +1375,7 @@ function startTouchResize(slotEl, slot, stateRef, renderFn, startY) {
     if (!resizeEdge) {
       const rect = slotEl.getBoundingClientRect();
       resizeEdge = touch.clientY < rect.top + rect.height / 2 ? "top" : "bottom";
+      showSlotNudgeControls({ slot, stateRef, renderFn, mode: "resize", edge: resizeEdge });
     }
     const offsetY = touch.clientY - bodyTop + viewOffset;
     const targetMin = Math.max(0, Math.round(offsetY / PX_PER_MIN / 10) * 10);
@@ -1340,11 +1429,21 @@ function attachMobileSlotHandlers(slotEl, slot, stateRef, renderFn, onDelete, on
       openSlotActionMenu(startX, startY, [
         {
           label: "拖动",
-          onClick: () => startTouchDrag(slot, stateRef, renderFn, startY),
+          onClick: () => startTouchDrag(slot, stateRef, renderFn),
         },
         {
-          label: "调整时长",
-          onClick: () => startTouchResize(slotEl, slot, stateRef, renderFn, startY),
+          label: "调整上边界",
+          onClick: () => {
+            showSlotNudgeControls({ slot, stateRef, renderFn, mode: "resize", edge: "top" });
+            startTouchResize(slotEl, slot, stateRef, renderFn, startY, "top");
+          },
+        },
+        {
+          label: "调整下边界",
+          onClick: () => {
+            showSlotNudgeControls({ slot, stateRef, renderFn, mode: "resize", edge: "bottom" });
+            startTouchResize(slotEl, slot, stateRef, renderFn, startY, "bottom");
+          },
         },
         {
           label: "删除",
@@ -1431,6 +1530,7 @@ function enableSlotDrag(slotEl, slot, stateRef, renderFn) {
     startY = event.clientY;
     startMin = slot.startMin;
     endMin = slot.endMin;
+    showSlotNudgeControls({ slot, stateRef, renderFn, mode: "move", edge: null });
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
   });
@@ -1517,6 +1617,7 @@ function enableSlotResize(slotEl, slot, renderFn, stateRef) {
         viewOffset: getViewOffsetPx(stateRef),
       };
       resizing = edge;
+      showSlotNudgeControls({ slot, stateRef, renderFn, mode: "resize", edge });
       document.addEventListener("mousemove", onMove);
       document.addEventListener("mouseup", onUp);
     });
@@ -1530,6 +1631,7 @@ function enableSlotResize(slotEl, slot, renderFn, stateRef) {
         viewOffset: getViewOffsetPx(stateRef),
       };
       resizing = edge;
+      showSlotNudgeControls({ slot, stateRef, renderFn, mode: "resize", edge });
     });
 
     handle.addEventListener("touchmove", (event) => {
@@ -1927,6 +2029,7 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
     startY = event.clientY;
     startMin = slot.startMin;
     endMin = slot.endMin;
+    showSlotNudgeControls({ slot, stateRef, renderFn, mode: "move", edge: null });
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
   });
