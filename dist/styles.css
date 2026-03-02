@@ -1276,6 +1276,11 @@ body.is-admin .split {
   flex-wrap: wrap;
 }
 
+.experiment-card-actions button[disabled] {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
 .experiment-slots {
   display: flex;
   flex-direction: column;

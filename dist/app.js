@@ -2772,6 +2772,14 @@ function toggleScheduleSlotSelection(exp, slot, slots) {
   setStatus(experimentStatus, count > 0 ? `已选择 ${count} 个时间段` : "请选择预约时间段");
 }
 
+function formatMissingProfilePrompt(eligibility) {
+  const missing = Array.isArray(eligibility?.missing_fields)
+    ? eligibility.missing_fields.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+  if (!missing.length) return "请先完善个人信息，保存后刷新页面方可报名。";
+  return `请完善以下信息：${missing.join("、")}。完善并保存后刷新页面方可报名。`;
+}
+
 function renderExperiments() {
   const container = experimentForm?.querySelector(".experiment-list");
   if (!container) return;
@@ -2791,6 +2799,8 @@ function renderExperiments() {
     const card = document.createElement("div");
     card.className = "experiment-card";
     card.dataset.experimentUid = exp.experiment_uid;
+    const missingProfileInfo = exp.eligibility?.ok !== true && exp.eligibility?.reason_code === "missing_profile_fields";
+    const isDisabledForMissing = missingProfileInfo;
     const isSelected = state.selectedExperimentUid === exp.experiment_uid;
     if (isSelected) card.classList.add("selected");
     const eligibility = exp.eligibility?.ok
@@ -2798,6 +2808,7 @@ function renderExperiments() {
       : exp.eligibility?.reason === "您所属分组已满员"
         ? "名额已满"
         : exp.eligibility?.reason || "暂不可报名";
+    const missingProfilePrompt = isDisabledForMissing ? formatMissingProfilePrompt(exp.eligibility) : "";
     const rewardText = formatRewardWithUnit(exp.reward);
     const deviceHint = exp.device_restriction_hint || "";
     const noticeText = exp.notes ? `注意：${exp.notes}` : "";
@@ -2805,8 +2816,8 @@ function renderExperiments() {
       ? formatSlotRequirementHint(exp.schedule_slots_required || "=1")
       : "";
     const actionHtml = exp.schedule_required
-      ? `<button type="button" class="ghost" data-action="detail">查看详情</button>`
-      : `<button type="button" class="primary" data-action="select">${isSelected ? "已选中" : "选中"}</button>`;
+      ? `<button type="button" class="ghost" data-action="detail" ${isDisabledForMissing ? "disabled" : ""}>查看详情</button>`
+      : `<button type="button" class="primary" data-action="select" ${isDisabledForMissing ? "disabled" : ""}>${isDisabledForMissing ? "需完善信息" : (isSelected ? "已选中" : "选中")}</button>`;
     card.innerHTML = `
       <div class="experiment-card-header">
         <strong>${exp.name}</strong>
@@ -2819,6 +2830,7 @@ function renderExperiments() {
         ${noticeText ? `<p class="notice">${noticeText}</p>` : ""}
         ${slotHint ? `<p class="hint">${slotHint}</p>` : ""}
         ${eligibility ? `<p class="hint">${eligibility}</p>` : ""}
+        ${missingProfilePrompt ? `<p class="notice">⚠️ ${missingProfilePrompt}</p>` : ""}
       </div>
       <div class="experiment-card-actions">
         ${actionHtml}
@@ -2828,8 +2840,14 @@ function renderExperiments() {
     const detailBtn = card.querySelector("[data-action='detail']");
     const selectBtn = card.querySelector("[data-action='select']");
 
-    detailBtn?.addEventListener("click", () => showExperimentDetail(exp));
-    selectBtn?.addEventListener("click", () => setSelectedExperiment(exp, null));
+    detailBtn?.addEventListener("click", () => {
+      if (isDisabledForMissing) return;
+      showExperimentDetail(exp);
+    });
+    selectBtn?.addEventListener("click", () => {
+      if (isDisabledForMissing) return;
+      setSelectedExperiment(exp, null);
+    });
 
     container.appendChild(card);
     rendered += 1;
@@ -3223,7 +3241,7 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
             <input name="schedule_slots_required" id="adminEditSlotRequirement" value="${experiment.schedule_slots_required || "=1"}" />
           </label>
           <label>
-            报酬
+            报酬（元）
             <input name="reward" id="adminEditReward" value="${experiment.reward || ""}" />
           </label>
           <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
