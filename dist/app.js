@@ -1535,6 +1535,30 @@ let slotActionMenuCloseHandler = null;
 let slotNudgeOverlay = null;
 let slotNudgeInterval = null;
 let slotNudgeContext = null;
+let slotNudgeTouchBlocker = null;
+let slotNudgePrevOverflow = "";
+let slotNudgePrevTouchAction = "";
+
+function lockPageScrollForNudge() {
+  if (slotNudgeTouchBlocker) return;
+  slotNudgePrevOverflow = document.body.style.overflow || "";
+  slotNudgePrevTouchAction = document.body.style.touchAction || "";
+  document.body.style.overflow = "hidden";
+  document.body.style.touchAction = "none";
+  slotNudgeTouchBlocker = (event) => {
+    event.preventDefault();
+  };
+  document.addEventListener("touchmove", slotNudgeTouchBlocker, { passive: false });
+}
+
+function unlockPageScrollForNudge() {
+  if (slotNudgeTouchBlocker) {
+    document.removeEventListener("touchmove", slotNudgeTouchBlocker);
+    slotNudgeTouchBlocker = null;
+  }
+  document.body.style.overflow = slotNudgePrevOverflow;
+  document.body.style.touchAction = slotNudgePrevTouchAction;
+}
 
 function closeSlotActionMenu() {
   if (!slotActionMenu) return;
@@ -1612,10 +1636,12 @@ function hideSlotNudgeControls() {
   }
   if (slotNudgeOverlay) slotNudgeOverlay.classList.add("hidden");
   slotNudgeContext = null;
+  unlockPageScrollForNudge();
 }
 
 function showSlotNudgeControls(context) {
   slotNudgeContext = context;
+  lockPageScrollForNudge();
   if (!slotNudgeOverlay) {
     const overlay = document.createElement("div");
     overlay.className = "slot-nudge-overlay hidden";
@@ -1643,9 +1669,15 @@ function showSlotNudgeControls(context) {
       event.preventDefault();
       startRepeat(1);
     });
-    overlay.querySelector('[data-nudge="close"]')?.addEventListener("click", () => {
+    const closeBtn = overlay.querySelector('[data-nudge="close"]');
+    const closeNudge = (event) => {
+      event?.preventDefault?.();
+      event?.stopPropagation?.();
       hideSlotNudgeControls();
-    });
+    };
+    closeBtn?.addEventListener("click", closeNudge);
+    closeBtn?.addEventListener("pointerdown", closeNudge);
+    closeBtn?.addEventListener("touchstart", closeNudge, { passive: false });
     document.addEventListener("pointerup", stopRepeat, { passive: true });
     document.addEventListener("pointercancel", stopRepeat, { passive: true });
     document.body.appendChild(overlay);
@@ -2822,7 +2854,7 @@ function renderAppliedExperiments() {
     const card = document.createElement("div");
     card.className = "experiment-card";
     const contact = item.contact ? `主试联系方式：${item.contact}` : "主试联系方式：-";
-    const notice = item.notes ? `注意：${item.notes}` : "";
+    const notice = item.notes ? `${item.notes}` : "";
     const reward = formatRewardWithUnit(item.reward);
     const deviceNotice = item.deviceHint ? `⚠️ ${item.deviceHint}` : "";
     const hasOnlineLink = item.location === "在线";
@@ -3153,8 +3185,7 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
           </label>
           <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
             <label style="display:flex;align-items:center;gap:8px;margin:0;">
-              <input type="checkbox" id="adminEditSameDeviceSingleAccount" ${Number(experiment.same_device_single_account ?? 1) !== 0 ? "checked" : ""} />
-              <span>同一实验中，同一设备禁止切换不同账号重复报名</span>
+              <input type="checkbox" id="adminEditSameDeviceSingleAccount" ${Number(experiment.same_device_single_account ?? 1) !== 0 ? "checked" : ""} />同一实验中，同一设备禁止切换不同账号重复报名
             </label>
             <button type="button" class="primary" id="saveExperimentInfo" style="width:auto;min-width:160px;">保存实验信息</button>
           </div>
