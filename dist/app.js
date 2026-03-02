@@ -2715,6 +2715,8 @@ function renderExperiments() {
       : exp.eligibility?.reason === "您所属分组已满员"
         ? "名额已满"
         : exp.eligibility?.reason || "暂不可报名";
+    const rewardText = exp.reward ? `报酬：约${exp.reward}` : "报酬：约-";
+    const deviceHint = exp.device_restriction_hint || "";
     const noticeText = exp.notes ? `注意：${exp.notes}` : "";
     const slotHint = exp.schedule_required
       ? formatSlotRequirementHint(exp.schedule_slots_required || "=1")
@@ -2729,6 +2731,8 @@ function renderExperiments() {
       </div>
       <div class="experiment-card-body">
         <p>${exp.description || "暂无简介"}</p>
+        <p class="hint">${rewardText}</p>
+        ${deviceHint ? `<p class="notice">⚠️ ${deviceHint}</p>` : ""}
         ${noticeText ? `<p class="notice">${noticeText}</p>` : ""}
         ${slotHint ? `<p class="hint">${slotHint}</p>` : ""}
         ${eligibility ? `<p class="hint">${eligibility}</p>` : ""}
@@ -2779,6 +2783,7 @@ function renderAppliedExperiments() {
 
   const applied = entries.map(([uid, record]) => {
     const exp = state.experiments.find((item) => item.experiment_uid === uid);
+    if (!exp) return null;
     const slots = Array.isArray(record?.slots) ? record.slots : [];
     const startTimes = slots
       .map((slot) => Date.parse(slot.start_time || slot.startTime || ""))
@@ -2790,6 +2795,7 @@ function renderAppliedExperiments() {
       uid,
       name: exp?.name || record?.experiment_type || uid,
       type: exp?.type || record?.experiment_type || "-",
+      reward: exp?.reward || "",
       contact: exp?.contact_phone || "",
       notes: exp?.notes || "",
       accessLink: record?.access_url || record?.location_link || exp?.location_link || "",
@@ -2798,7 +2804,7 @@ function renderAppliedExperiments() {
         ? formatSlotDateTime(new Date(Math.max(...startTimes)).toISOString())
         : "-",
     };
-  });
+  }).filter(Boolean);
 
   applied.sort((a, b) => b.latestTime - a.latestTime);
 
@@ -2807,6 +2813,7 @@ function renderAppliedExperiments() {
     card.className = "experiment-card";
     const contact = item.contact ? `主试联系方式：${item.contact}` : "主试联系方式：-";
     const notice = item.notes ? `注意：${item.notes}` : "";
+    const reward = item.reward ? `报酬：约${item.reward}` : "报酬：约-";
     const hasOnlineLink = typeof item.accessLink === "string" && /^https?:\/\//i.test(item.accessLink);
     card.innerHTML = `
       <div class="experiment-card-header">
@@ -2815,6 +2822,7 @@ function renderAppliedExperiments() {
       </div>
       <div class="experiment-card-body">
         <p class="hint">预约时间：${item.slotLabel}</p>
+        <p class="hint">${reward}</p>
         ${notice ? `<p class="notice">${notice}</p>` : ""}
         <p class="hint">${contact}</p>
         ${hasOnlineLink ? `<button type="button" class="ghost" data-action="copy-link">复制实验链接</button>` : ""}
