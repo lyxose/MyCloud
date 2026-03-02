@@ -1686,56 +1686,97 @@ function showSlotNudgeControls(context) {
   slotNudgeOverlay.classList.remove("hidden");
 }
 
-function startTouchDrag(slot, stateRef, renderFn) {
+function getTouchById(event, touchId) {
+  if (touchId === null || touchId === undefined) return null;
+  const touches = event?.touches || [];
+  for (let i = 0; i < touches.length; i += 1) {
+    const t = touches[i];
+    if (t?.identifier === touchId) return t;
+  }
+  const changed = event?.changedTouches || [];
+  for (let i = 0; i < changed.length; i += 1) {
+    const t = changed[i];
+    if (t?.identifier === touchId) return t;
+  }
+  return null;
+}
+
+function findSlotDayBody(slotEl, slotDate) {
+  const direct = slotEl?.closest?.(".schedule-day-body");
+  if (direct) return direct;
+  const timeline = document.querySelector(`.schedule-timeline[data-date="${slotDate}"]`);
+  return timeline?.closest?.(".schedule-day-body") || null;
+}
+
+function updateSlotElementPreview(slotEl, slot) {
+  if (!slotEl || !slot) return;
+  slotEl.style.top = `${slot.startMin * PX_PER_MIN}px`;
+  slotEl.style.height = `${Math.max(10, slot.endMin - slot.startMin) * PX_PER_MIN}px`;
+  const startEl = slotEl.querySelector(".slot-time-start");
+  const endEl = slotEl.querySelector(".slot-time-end");
+  if (startEl) startEl.textContent = formatMinutes(slot.startMin);
+  if (endEl) endEl.textContent = formatMinutes(slot.endMin);
+}
+
+function startTouchDrag(slotEl, slot, stateRef, renderFn) {
   let activeTouchId = null;
-  let dragStartY = null;
-  let dragStartMin = slot.startMin;
-  let dragEndMin = slot.endMin;
+  let anchorOffsetMin = 0;
   showSlotNudgeControls({ slot, stateRef, renderFn, mode: "move", edge: null });
 
-  const resolveTouch = (event) => {
-    if (activeTouchId === null) {
-      const initial = event.touches?.[0] || event.changedTouches?.[0] || null;
-      if (initial) activeTouchId = initial.identifier;
-      return initial;
-    }
-    const allTouches = [...(event.touches || []), ...(event.changedTouches || [])];
-    return allTouches.find((touch) => touch.identifier === activeTouchId) || null;
+  const getTouchMinute = (touch) => {
+    const body = findSlotDayBody(slotEl, slot.date);
+    if (!body || !touch) return null;
+    const bodyTop = body.getBoundingClientRect().top;
+    const viewOffset = getViewOffsetPx(stateRef);
+    return (touch.clientY - bodyTop + viewOffset) / PX_PER_MIN;
+  };
+
+  const onStart = (event) => {
+    if (activeTouchId !== null) return;
+    const touch = event.changedTouches?.[0] || event.touches?.[0] || null;
+    if (!touch) return;
+    const fromOverlay = event.target?.closest?.(".slot-nudge-overlay");
+    if (fromOverlay) return;
+    activeTouchId = touch.identifier;
+    const minute = getTouchMinute(touch);
+    if (minute === null) return;
+    anchorOffsetMin = minute - slot.startMin;
+    event.preventDefault();
   };
 
   const onMove = (event) => {
-    const touch = resolveTouch(event);
+    if (activeTouchId === null) return;
+    const touch = getTouchById(event, activeTouchId);
     if (!touch) return;
-    if (dragStartY === null) {
-      dragStartY = touch.pageY;
-      dragStartMin = slot.startMin;
-      dragEndMin = slot.endMin;
-    }
-    const delta = touch.pageY - dragStartY;
-    const step = Math.round(delta / (PX_PER_MIN * 10)) * 10;
-    const duration = dragEndMin - dragStartMin;
-    let nextStart = Math.max(0, Math.min(1440 - duration, dragStartMin + step));
+    const touchMin = getTouchMinute(touch);
+    if (touchMin === null) return;
+    const duration = slot.endMin - slot.startMin;
+    let nextStart = Math.round((touchMin - anchorOffsetMin) / 10) * 10;
+    nextStart = Math.max(0, Math.min(1440 - duration, nextStart));
     if (slot.date === formatLocalDate(new Date())) {
       const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
-      if (dragStartMin >= nowMin && nextStart < nowMin) nextStart = nowMin;
+      if (nextStart < nowMin) nextStart = nowMin;
     }
     slot.startMin = nextStart;
     slot.endMin = nextStart + duration;
-    renderFn();
+    updateSlotElementPreview(slotEl, slot);
     event.preventDefault();
   };
+
   const onEnd = (event) => {
-    if (activeTouchId !== null) {
-      const hasTargetEnded = [...(event.changedTouches || [])].some((touch) => touch.identifier === activeTouchId);
-      if (!hasTargetEnded) return;
-    }
+    if (activeTouchId === null) return;
+    const endedTouch = getTouchById(event, activeTouchId);
+    if (!endedTouch) return;
+    activeTouchId = null;
+    document.removeEventListener("touchstart", onStart, true);
     document.removeEventListener("touchmove", onMove);
     document.removeEventListener("touchend", onEnd);
     document.removeEventListener("touchcancel", onEnd);
-    activeTouchId = null;
     mergeOverlappingSlots(stateRef);
     renderFn();
   };
+
+  document.addEventListener("touchstart", onStart, { passive: false, capture: true });
   document.addEventListener("touchmove", onMove, { passive: false });
   document.addEventListener("touchend", onEnd);
   document.addEventListener("touchcancel", onEnd);
@@ -1744,21 +1785,22 @@ function startTouchDrag(slot, stateRef, renderFn) {
 function startTouchResize(slotEl, slot, stateRef, renderFn, startY, preferredEdge = null) {
   let resizeEdge = preferredEdge;
   let activeTouchId = null;
-  const body = slotEl.closest(".schedule-day-body");
+  const body = findSlotDayBody(slotEl, slot.date);
   if (!body) return;
 
-  const resolveTouch = (event) => {
-    if (activeTouchId === null) {
-      const initial = event.touches?.[0] || event.changedTouches?.[0] || null;
-      if (initial) activeTouchId = initial.identifier;
-      return initial;
-    }
-    const allTouches = [...(event.touches || []), ...(event.changedTouches || [])];
-    return allTouches.find((touch) => touch.identifier === activeTouchId) || null;
+  const onStart = (event) => {
+    if (activeTouchId !== null) return;
+    const touch = event.changedTouches?.[0] || event.touches?.[0] || null;
+    if (!touch) return;
+    const fromOverlay = event.target?.closest?.(".slot-nudge-overlay");
+    if (fromOverlay) return;
+    activeTouchId = touch.identifier;
+    event.preventDefault();
   };
 
   const onMove = (event) => {
-    const touch = resolveTouch(event);
+    if (activeTouchId === null) return;
+    const touch = getTouchById(event, activeTouchId);
     if (!touch) return;
     if (!resizeEdge) {
       const rect = slotEl.getBoundingClientRect();
@@ -1781,21 +1823,22 @@ function startTouchResize(slotEl, slot, stateRef, renderFn, startY, preferredEdg
       let nextEnd = Math.max(slot.startMin + minDuration, targetMin);
       slot.endMin = Math.min(1440, nextEnd);
     }
-    renderFn();
+    updateSlotElementPreview(slotEl, slot);
     event.preventDefault();
   };
   const onEnd = (event) => {
-    if (activeTouchId !== null) {
-      const hasTargetEnded = [...(event.changedTouches || [])].some((touch) => touch.identifier === activeTouchId);
-      if (!hasTargetEnded) return;
-    }
+    if (activeTouchId === null) return;
+    const endedTouch = getTouchById(event, activeTouchId);
+    if (!endedTouch) return;
+    activeTouchId = null;
+    document.removeEventListener("touchstart", onStart, true);
     document.removeEventListener("touchmove", onMove);
     document.removeEventListener("touchend", onEnd);
     document.removeEventListener("touchcancel", onEnd);
-    activeTouchId = null;
     mergeOverlappingSlots(stateRef);
     renderFn();
   };
+  document.addEventListener("touchstart", onStart, { passive: false, capture: true });
   document.addEventListener("touchmove", onMove, { passive: false });
   document.addEventListener("touchend", onEnd);
   document.addEventListener("touchcancel", onEnd);
@@ -1826,7 +1869,7 @@ function attachMobileSlotHandlers(slotEl, slot, stateRef, renderFn, onDelete, on
       openSlotActionMenu(startX, startY, [
         {
           label: "拖动",
-          onClick: () => startTouchDrag(slot, stateRef, renderFn),
+          onClick: () => startTouchDrag(slotEl, slot, stateRef, renderFn),
         },
         {
           label: "调整上边界",
@@ -3184,8 +3227,9 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
             <input name="reward" id="adminEditReward" value="${experiment.reward || ""}" />
           </label>
           <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-            <label style="display:flex;align-items:center;gap:8px;margin:0;">
-              <input type="checkbox" id="adminEditSameDeviceSingleAccount" ${Number(experiment.same_device_single_account ?? 1) !== 0 ? "checked" : ""} />同一实验中，同一设备禁止切换不同账号重复报名
+            <label style="display:flex;align-items:center;gap:8px;margin:0;white-space:nowrap;flex-wrap:nowrap;min-width:0;">
+              <input type="checkbox" id="adminEditSameDeviceSingleAccount" ${Number(experiment.same_device_single_account ?? 1) !== 0 ? "checked" : ""} />
+              <span style="white-space:nowrap;">同一实验中，同一设备禁止切换不同账号重复报名</span>
             </label>
             <button type="button" class="primary" id="saveExperimentInfo" style="width:auto;min-width:160px;">保存实验信息</button>
           </div>
