@@ -542,6 +542,25 @@ function setStatus(el, text, isError = false) {
   el.style.color = isError ? "#b42318" : "";
 }
 
+function setLoadingBlock(container, text = "加载中...") {
+  if (!container) return;
+  container.innerHTML = `
+    <div class="loading-block" role="status" aria-live="polite">
+      <span class="loading-spinner" aria-hidden="true"></span>
+      <span>${text}</span>
+    </div>
+  `;
+}
+
+function setAdminTabsLoading(text = "正在加载实验列表...") {
+  if (!adminTabs) return;
+  adminTabs.innerHTML = `
+    <button class="tab active" type="button" disabled>
+      <span class="loading-inline"><span class="loading-spinner small" aria-hidden="true"></span>${text}</span>
+    </button>
+  `;
+}
+
 function toJsonForm(form) {
   const data = new FormData(form);
   return Object.fromEntries(data.entries());
@@ -733,7 +752,7 @@ async function apiRequest(path, options = {}) {
   return data;
 }
 
-async function downloadApiFile(path, fallbackName = "download.json") {
+async function downloadApiFile(path, fallbackName = "download.tar") {
   const headers = {};
   if (state.token) headers.Authorization = `Bearer ${state.token}`;
   const response = await fetch(`${API_BASE}${path}`, { method: "GET", headers });
@@ -1174,6 +1193,27 @@ function syncAdminHelpCardHeight() {
   const target = Math.max(180, Math.floor(rightHeight - usedTop));
   quotaHelpBubble.style.height = `${target}px`;
   quotaHelpBubble.style.maxHeight = `${target}px`;
+}
+
+function syncAdminEditHelpCardHeight(panel) {
+  if (!panel) return;
+  const helpCard = panel.querySelector(".admin-left .info-card");
+  const rightForm = panel.querySelector("#adminEditInfoForm");
+  if (!helpCard || !rightForm) return;
+  if (window.innerWidth < 980) {
+    helpCard.style.height = "";
+    helpCard.style.maxHeight = "";
+    return;
+  }
+  const leftCol = helpCard.closest(".admin-left");
+  if (!leftCol) return;
+  const leftRect = leftCol.getBoundingClientRect();
+  const cardRect = helpCard.getBoundingClientRect();
+  const rightHeight = rightForm.getBoundingClientRect().height;
+  const usedTop = cardRect.top - leftRect.top;
+  const target = Math.max(180, Math.floor(rightHeight - usedTop));
+  helpCard.style.height = `${target}px`;
+  helpCard.style.maxHeight = `${target}px`;
 }
 
 function attachAdminHelpHeightObserver() {
@@ -2529,6 +2569,8 @@ function renderMajorSuggestions(query = "") {
 
 async function loadExperiments() {
   if (!state.token) return;
+  const container = experimentForm?.querySelector(".experiment-list");
+  setLoadingBlock(container, "正在加载可报名实验...");
   try {
     const data = await apiRequest("/experiments", { method: "GET" });
     state.experiments = data.experiments || [];
@@ -2545,6 +2587,7 @@ async function loadExperiments() {
     renderAppliedExperiments();
   } catch (error) {
     state.experiments = [];
+    renderExperiments();
   }
 }
 
@@ -2751,6 +2794,7 @@ function renderAppliedExperiments() {
 
 async function loadAdminExperiments() {
   if (!(state.role === "admin" || state.role === "root")) return;
+  setAdminTabsLoading();
   try {
     const data = await apiRequest("/admin/experiments", { method: "GET" });
     state.adminExperiments = data.experiments || [];
@@ -2760,6 +2804,7 @@ async function loadAdminExperiments() {
     }
   } catch {
     state.adminExperiments = [];
+    renderAdminTabs();
   }
 }
 
@@ -2850,6 +2895,8 @@ async function selectAdminTab(tabKey) {
 }
 
 async function loadAdminExperimentDetail(experimentUid) {
+  const panel = document.getElementById("adminPanelExperiments");
+  setLoadingBlock(panel, "正在加载实验详情...");
   try {
     const data = await apiRequest(`/admin/experiment?experiment_uid=${encodeURIComponent(experimentUid)}`, {
       method: "GET",
@@ -2891,16 +2938,8 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
         <div class="hint" id="adminHostedReuploadStatus" style="margin-top:0.45rem;"></div>
       </div>
     `
-    : (detailIsGithub
-      ? `
-      <div class="hosted-assets-card" id="adminGithubSourceCard">
-        <div class="hosted-assets-row">
-          <strong>GitHub 实验源</strong>
-          <a class="hint" href="${detailAccessConfig.github_repo || "#"}" target="_blank" rel="noopener">${detailAccessConfig.github_repo || "未设置"}</a>
-        </div>
-      </div>
-    `
-      : "");
+    : "";
+  const showScheduleEditor = Number(experiment.schedule_required) === 1;
   panel.innerHTML = `
     <div class="admin-layout">
       <div class="admin-left">
@@ -3049,7 +3088,7 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
         <button type="button" class="ghost danger hidden" id="deleteExperimentBtn">删除实验</button>
       </div>
     </div>
-    <div class="schedule-editor full-width" id="adminEditScheduleEditor">
+    <div class="schedule-editor full-width ${showScheduleEditor ? "" : "hidden"}" id="adminEditScheduleEditor">
       <div class="schedule-header">
         <button type="button" class="ghost" id="adminEditSchedulePrev">◀</button>
         <div id="adminEditScheduleTitle"></div>
@@ -3178,6 +3217,18 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
     });
   }
 
+  const isAutoGeneratedLink = isHosted || isGithub;
+  if (editLocationLink && isAutoGeneratedLink) {
+    editLocationLink.disabled = true;
+    editLocationLink.title = "该链接由系统根据托管资源自动生成，发布后不可手动修改";
+    editLocationLink.classList.add("readonly-field");
+  }
+  if (editLocation && isAutoGeneratedLink) {
+    editLocation.disabled = true;
+    editLocation.title = "托管资源实验地点固定为在线";
+    editLocation.classList.add("readonly-field");
+  }
+
   if (isHosted && accessConfig.asset_prefix && hostedMeta) {
     getHostedUploadSummary(accessConfig.asset_prefix)
       .then((summary) => {
@@ -3194,7 +3245,7 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
       hostedDownloadBtn.disabled = true;
       await downloadApiFile(
         `/admin/experiment/upload/archive?prefix=${encodeURIComponent(accessConfig.asset_prefix)}`,
-        `${experiment.experiment_uid}_assets.json`
+        `${experiment.experiment_uid}_assets.tar`
       );
     } catch (error) {
       setStatus(adminExperimentStatus, error.message, true);
@@ -3327,7 +3378,9 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
     renderAdminEditScheduleGrid();
   });
 
-  loadScheduleFromSlots(slots);
+  if (showScheduleEditor) {
+    loadScheduleFromSlots(slots);
+  }
 
   saveInfoBtn?.addEventListener("click", async () => {
     try {
@@ -3431,7 +3484,11 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
     }
   });
 
-  renderAdminEditScheduleGrid();
+  if (showScheduleEditor) {
+    renderAdminEditScheduleGrid();
+  }
+  requestAnimationFrame(() => syncAdminEditHelpCardHeight(panel));
+  window.addEventListener("resize", () => syncAdminEditHelpCardHeight(panel), { passive: true, once: true });
 }
 
 function renderAdminSchedulePreview(slots, participantsMap, container) {
@@ -3486,6 +3543,7 @@ function renderAdminSchedulePreview(slots, participantsMap, container) {
 
 async function loadAdminExperimentList() {
   if (!(state.role === "admin" || state.role === "root")) return;
+  setLoadingBlock(adminExperimentList, "正在加载实验与被试管理列表...");
   try {
     const data = await apiRequest("/admin/experiments", { method: "GET" });
     renderAdminExperimentList(data.experiments || []);
@@ -3515,7 +3573,7 @@ function renderAdminExperimentList(experiments) {
         downloadAllBtn.disabled = true;
         await downloadApiFile(
           `/admin/experiment/data/download?experiment_uid=${encodeURIComponent(exp.experiment_uid)}`,
-          `${exp.experiment_uid}_dataset.json`
+          `${exp.experiment_uid}_dataset.tar`
         );
       } catch (error) {
         alert(error.message || "下载失败");
@@ -3548,7 +3606,7 @@ function showTooltip(text, x, y) {
 }
 
 async function loadParticipantsForExperiment(experimentUid, list) {
-  list.innerHTML = "加载中...";
+  setLoadingBlock(list, "正在加载参与名单...");
   try {
     const data = await apiRequest(`/admin/experiment?experiment_uid=${encodeURIComponent(experimentUid)}`, {
       method: "GET",
@@ -3576,7 +3634,7 @@ async function loadParticipantsForExperiment(experimentUid, list) {
         try {
           await downloadApiFile(
             `/admin/experiment/data/download-user?experiment_uid=${encodeURIComponent(experimentUid)}&user_uid=${encodeURIComponent(participant.user_uid)}`,
-            `${experimentUid}_${participant.user_uid}_dataset.json`
+            `${experimentUid}_${participant.user_uid}_dataset.tar`
           );
         } catch (error) {
           alert(error.message || "下载失败");
