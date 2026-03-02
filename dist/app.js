@@ -2715,7 +2715,7 @@ function renderExperiments() {
       : exp.eligibility?.reason === "您所属分组已满员"
         ? "名额已满"
         : exp.eligibility?.reason || "暂不可报名";
-    const rewardText = exp.reward ? `报酬：约${exp.reward}` : "报酬：约-";
+    const rewardText = formatRewardWithUnit(exp.reward);
     const deviceHint = exp.device_restriction_hint || "";
     const noticeText = exp.notes ? `注意：${exp.notes}` : "";
     const slotHint = exp.schedule_required
@@ -2799,6 +2799,7 @@ function renderAppliedExperiments() {
       reward: exp?.reward || "",
       contact: exp?.contact_phone || "",
       notes: exp?.notes || "",
+      deviceHint: exp?.device_restriction_hint || "",
       accessLink: record?.access_url || record?.location_link || exp?.location_link || "",
       latestTime: sortTime,
       slotLabel: startTimes.length
@@ -2814,7 +2815,8 @@ function renderAppliedExperiments() {
     card.className = "experiment-card";
     const contact = item.contact ? `主试联系方式：${item.contact}` : "主试联系方式：-";
     const notice = item.notes ? `注意：${item.notes}` : "";
-    const reward = item.reward ? `报酬：约${item.reward}` : "报酬：约-";
+    const reward = formatRewardWithUnit(item.reward);
+    const deviceNotice = item.deviceHint ? `⚠️ ${item.deviceHint}` : "";
     const hasOnlineLink = item.location === "在线";
     card.innerHTML = `
       <div class="experiment-card-header">
@@ -2824,6 +2826,7 @@ function renderAppliedExperiments() {
       <div class="experiment-card-body">
         <p class="hint">预约时间：${item.slotLabel}</p>
         <p class="hint">${reward}</p>
+        ${deviceNotice ? `<p class="notice">${deviceNotice}</p>` : ""}
         ${notice ? `<p class="notice">${notice}</p>` : ""}
         <p class="hint">${contact}</p>
         ${hasOnlineLink ? `<button type="button" class="ghost" data-action="copy-link">复制实验链接</button>` : ""}
@@ -3623,8 +3626,8 @@ function renderAdminExperimentList(experiments) {
     card.innerHTML = `
       <h4>${exp.name}</h4>
       <p class="hint">${exp.type} · ${exp.location}</p>
-      <button type="button" class="ghost" data-action="download-all">下载完整实验数据集</button>
-      <button type="button" class="ghost" data-action="download-participants">下载被试参与记录表</button>
+      <button type="button" class="ghost" data-action="download-all">下载完整数据集</button>
+      <button type="button" class="ghost" data-action="download-participants">下载被试表</button>
       <button type="button" class="ghost" data-action="toggle">展开参与名单</button>
       <div class="admin-participant-list hidden"></div>
     `;
@@ -3648,10 +3651,7 @@ function renderAdminExperimentList(experiments) {
     downloadParticipantsBtn?.addEventListener("click", async () => {
       try {
         downloadParticipantsBtn.disabled = true;
-        await downloadApiFile(
-          `/admin/experiment/participants/export?experiment_uid=${encodeURIComponent(exp.experiment_uid)}`,
-          `${exp.experiment_uid}_participants.csv`
-        );
+        await downloadParticipantsCsv(exp.experiment_uid);
       } catch (error) {
         alert(error.message || "下载失败");
       } finally {
@@ -3689,6 +3689,7 @@ async function loadParticipantsForExperiment(experimentUid, list) {
       method: "GET",
     });
     const participants = [];
+    const isScheduled = Number(data?.experiment?.schedule_required || 0) === 1;
     (data.slots || []).forEach((slot) => {
       const slotParticipants = JSON.parse(slot.participants_json || "[]");
       slotParticipants.forEach((p) => participants.push({ ...p, slot }));
@@ -3703,19 +3704,20 @@ async function loadParticipantsForExperiment(experimentUid, list) {
       item.className = "admin-participant-item";
       const isRejected = String(participant.participant_status || participant.status || "").toLowerCase() === "rejected" || participant.rejected === true;
       if (isRejected) item.classList.add("rejected");
-      const hasScheduledSlot = !!participant.slot?.start_time;
-      const startText = hasScheduledSlot
-        ? formatSlotDateTime(participant.slot.start_time)
+      const startRaw = isScheduled
+        ? participant.slot?.start_time
         : (participant.actual_opened_at || participant.participated_at || participant.applied_at || "-");
-      const endText = hasScheduledSlot
-        ? (participant.slot?.end_time ? formatSlotDateTime(participant.slot.end_time) : "-")
+      const endRaw = isScheduled
+        ? (participant.slot?.end_time || "-")
         : (participant.actual_ended_at || "-");
+      const startText = formatCompactDateTime(startRaw);
+      const endText = formatCompactDateTime(endRaw);
       const rejectMeta = isRejected
         ? `（已拒绝${participant.rejected_at ? `：${participant.rejected_at}` : ""}${participant.rejection_reason ? `，原因：${participant.rejection_reason}` : ""}）`
         : "";
       item.innerHTML = `
-        <span>${participant.name} (${participant.user_uid}) · 开始：${startText} · 结束：${endText} ${rejectMeta}</span>
-        <button type="button" class="ghost" data-action="download-user">下载该被试实验数据</button>
+        <span>${participant.name} (${participant.user_uid}) · ${startText} to ${endText} ${rejectMeta}</span>
+        <button type="button" class="ghost" data-action="download-user">下载数据</button>
         <button type="button" class="ghost" data-action="reject" ${isRejected ? "disabled" : ""}>${isRejected ? "已拒绝" : "拒绝被试"}</button>
         <button type="button" class="ghost" data-action="restore" ${isRejected ? "" : "disabled"}>恢复被试</button>
         <button type="button" class="ghost" data-action="feedback">添加评价</button>
@@ -3857,6 +3859,42 @@ function formatSlotDateTime(value) {
   return `${y}-${m}-${d} ${formatSlotTime(value)}`;
 }
 
+function formatCompactDateTime(value) {
+  if (!value || value === "-") return "-";
+  const raw = String(value).trim();
+  if (!raw) return "-";
+  const directIso = raw.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/);
+  if (directIso?.[1]) {
+    return directIso[1];
+  }
+  const directSpace = raw.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})/);
+  if (directSpace?.[1] && directSpace?.[2]) {
+    return `${directSpace[1]}T${directSpace[2]}`;
+  }
+  const parsed = Date.parse(raw.replace(" ", "T"));
+  if (!Number.isNaN(parsed)) {
+    const d = new Date(parsed);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    const ss = String(d.getSeconds()).padStart(2, "0");
+    return `${y}-${m}-${day}T${hh}:${mm}:${ss}`;
+  }
+  return raw
+    .replace(/\+\d{2}:\d{2}$/i, "")
+    .replace(/Z$/i, "")
+    .replace(/\.\d+$/, "")
+    .slice(0, 19);
+}
+
+function formatRewardWithUnit(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return "报酬：约-";
+  return /元\s*$/u.test(text) ? `报酬：约${text}` : `报酬：约${text}元`;
+}
+
 async function applyExperiment(exp, selectedSlots) {
   setStatus(experimentStatus, "提交中...");
   try {
@@ -3910,6 +3948,24 @@ async function applyExperiment(exp, selectedSlots) {
       profilePane?.scrollIntoView({ behavior: "smooth", block: "center" });
     }
   }
+}
+
+async function downloadParticipantsCsv(experimentUid) {
+  const encoded = encodeURIComponent(experimentUid);
+  const endpoints = [
+    `/admin/experiment/participants/export?experiment_uid=${encoded}`,
+    `/admin/experiment/participants/download?experiment_uid=${encoded}`,
+  ];
+  let lastError = null;
+  for (const endpoint of endpoints) {
+    try {
+      await downloadApiFile(endpoint, `${experimentUid}_participants.csv`);
+      return;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error("下载失败");
 }
 
 tabs.forEach((tab) => {
