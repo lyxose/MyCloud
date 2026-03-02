@@ -2795,6 +2795,7 @@ function renderAppliedExperiments() {
       uid,
       name: exp?.name || record?.experiment_type || uid,
       type: exp?.type || record?.experiment_type || "-",
+      location: exp?.location || "",
       reward: exp?.reward || "",
       contact: exp?.contact_phone || "",
       notes: exp?.notes || "",
@@ -2814,7 +2815,7 @@ function renderAppliedExperiments() {
     const contact = item.contact ? `主试联系方式：${item.contact}` : "主试联系方式：-";
     const notice = item.notes ? `注意：${item.notes}` : "";
     const reward = item.reward ? `报酬：约${item.reward}` : "报酬：约-";
-    const hasOnlineLink = typeof item.accessLink === "string" && /^https?:\/\//i.test(item.accessLink);
+    const hasOnlineLink = item.location === "在线";
     card.innerHTML = `
       <div class="experiment-card-header">
         <strong>${item.name}</strong>
@@ -2831,15 +2832,21 @@ function renderAppliedExperiments() {
     if (hasOnlineLink) {
       card.querySelector("[data-action='copy-link']")?.addEventListener("click", async () => {
         try {
+          const link = item.accessLink;
+          if (!/^https?:\/\//i.test(String(link || ""))) {
+            setStatus(experimentStatus, "当前实验链接不可用，请联系主试。", true);
+            return;
+          }
+
           if (navigator.clipboard?.writeText) {
-            await navigator.clipboard.writeText(item.accessLink);
+            await navigator.clipboard.writeText(link);
             setStatus(experimentStatus, "已复制实验链接。请尽快在符合要求设备中打开。");
           } else {
-            window.prompt("复制实验链接", item.accessLink);
+            window.prompt("复制实验链接", link);
             setStatus(experimentStatus, "请复制链接并在符合要求设备中打开。");
           }
         } catch {
-          window.prompt("复制实验链接", item.accessLink);
+          window.prompt("复制实验链接", item.accessLink || "");
         }
       });
     }
