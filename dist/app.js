@@ -727,6 +727,29 @@ function updateAccessControlHint(selectEl, hintEl) {
   selectEl.title = hint;
 }
 
+function normalizeRequestError(error, path = "") {
+  const raw = String(error?.message || error || "请求失败").trim();
+  const lower = raw.toLowerCase();
+  const networkLike =
+    lower.includes("failed to fetch")
+    || lower.includes("err_name_not_resolved")
+    || lower.includes("networkerror")
+    || lower.includes("load failed")
+    || lower.includes("network request failed");
+
+  if (networkLike) {
+    const isOffline = typeof navigator !== "undefined" && navigator.onLine === false;
+    if (isOffline) {
+      return "网络连接已断开，请检查网络后重试。";
+    }
+    if (path.includes("/admin/experiment/create")) {
+      return "发布实验时网络或域名解析暂时异常，请稍后重试（通常几秒到几十秒可恢复）。";
+    }
+    return "网络或域名解析暂时异常，请稍后重试。";
+  }
+  return raw || "请求失败";
+}
+
 async function apiRequest(path, options = {}) {
   const headers = options.headers || {};
   if (state.token) headers.Authorization = `Bearer ${state.token}`;
@@ -734,11 +757,16 @@ async function apiRequest(path, options = {}) {
     headers["Content-Type"] = "application/json";
   }
 
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers,
-    body: options.json ? JSON.stringify(options.json) : options.body,
-  });
+  let response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers,
+      body: options.json ? JSON.stringify(options.json) : options.body,
+    });
+  } catch (error) {
+    throw new Error(normalizeRequestError(error, path));
+  }
 
   const contentType = response.headers.get("content-type") || "";
   const data = contentType.includes("application/json") ? await response.json() : await response.text();
@@ -747,7 +775,7 @@ async function apiRequest(path, options = {}) {
     if (data?.error === "Server error" && data?.detail) {
       message = data.detail;
     }
-    throw new Error(message);
+    throw new Error(normalizeRequestError(new Error(message), path));
   }
   return data;
 }
@@ -3581,10 +3609,12 @@ function renderAdminExperimentList(experiments) {
       <h4>${exp.name}</h4>
       <p class="hint">${exp.type} · ${exp.location}</p>
       <button type="button" class="ghost" data-action="download-all">下载完整实验数据集</button>
+      <button type="button" class="ghost" data-action="download-participants">下载被试参与记录表</button>
       <button type="button" class="ghost" data-action="toggle">展开参与名单</button>
       <div class="admin-participant-list hidden"></div>
     `;
     const downloadAllBtn = card.querySelector("[data-action='download-all']");
+    const downloadParticipantsBtn = card.querySelector("[data-action='download-participants']");
     const toggleBtn = card.querySelector("[data-action='toggle']");
     const list = card.querySelector(".admin-participant-list");
     downloadAllBtn?.addEventListener("click", async () => {
@@ -3598,6 +3628,19 @@ function renderAdminExperimentList(experiments) {
         alert(error.message || "下载失败");
       } finally {
         downloadAllBtn.disabled = false;
+      }
+    });
+    downloadParticipantsBtn?.addEventListener("click", async () => {
+      try {
+        downloadParticipantsBtn.disabled = true;
+        await downloadApiFile(
+          `/admin/experiment/participants/export?experiment_uid=${encodeURIComponent(exp.experiment_uid)}`,
+          `${exp.experiment_uid}_participants.csv`
+        );
+      } catch (error) {
+        alert(error.message || "下载失败");
+      } finally {
+        downloadParticipantsBtn.disabled = false;
       }
     });
     toggleBtn.addEventListener("click", async () => {
@@ -3645,14 +3688,21 @@ async function loadParticipantsForExperiment(experimentUid, list) {
       item.className = "admin-participant-item";
       const isRejected = String(participant.participant_status || participant.status || "").toLowerCase() === "rejected" || participant.rejected === true;
       if (isRejected) item.classList.add("rejected");
-      const startText = participant.slot?.start_time ? formatSlotDateTime(participant.slot.start_time) : "-";
+      const hasScheduledSlot = !!participant.slot?.start_time;
+      const startText = hasScheduledSlot
+        ? formatSlotDateTime(participant.slot.start_time)
+        : (participant.actual_opened_at || participant.participated_at || participant.applied_at || "-");
+      const endText = hasScheduledSlot
+        ? (participant.slot?.end_time ? formatSlotDateTime(participant.slot.end_time) : "-")
+        : (participant.actual_ended_at || "-");
       const rejectMeta = isRejected
         ? `（已拒绝${participant.rejected_at ? `：${participant.rejected_at}` : ""}${participant.rejection_reason ? `，原因：${participant.rejection_reason}` : ""}）`
         : "";
       item.innerHTML = `
-        <span>${participant.name} (${participant.user_uid}) · ${startText} ${rejectMeta}</span>
+        <span>${participant.name} (${participant.user_uid}) · 开始：${startText} · 结束：${endText} ${rejectMeta}</span>
         <button type="button" class="ghost" data-action="download-user">下载该被试实验数据</button>
         <button type="button" class="ghost" data-action="reject" ${isRejected ? "disabled" : ""}>${isRejected ? "已拒绝" : "拒绝被试"}</button>
+        <button type="button" class="ghost" data-action="restore" ${isRejected ? "" : "disabled"}>恢复被试</button>
         <button type="button" class="ghost" data-action="feedback">添加评价</button>
       `;
       item.querySelector("[data-action='download-user']")?.addEventListener("click", async () => {
@@ -3690,6 +3740,23 @@ async function loadParticipantsForExperiment(experimentUid, list) {
           await loadParticipantsForExperiment(experimentUid, list);
         } catch (error) {
           alert(error.message || "拒绝失败");
+        }
+      });
+      item.querySelector("[data-action='restore']")?.addEventListener("click", async () => {
+        const ok = window.confirm(`确认恢复 ${participant.name}（${participant.user_uid}）为有效被试？`);
+        if (!ok) return;
+        try {
+          await apiRequest("/admin/experiment/participant/restore", {
+            method: "POST",
+            json: {
+              experiment_uid: experimentUid,
+              user_uid: participant.user_uid,
+              slot_id: participant.slot?.id,
+            },
+          });
+          await loadParticipantsForExperiment(experimentUid, list);
+        } catch (error) {
+          alert(error.message || "恢复失败");
         }
       });
       list.appendChild(item);
