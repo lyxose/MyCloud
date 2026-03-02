@@ -786,6 +786,14 @@ async function downloadApiFile(path, fallbackName = "download.tar") {
   const response = await fetch(`${API_BASE}${path}`, { method: "GET", headers });
   if (!response.ok) {
     const text = await response.text().catch(() => "下载失败");
+    console.error("下载失败", {
+      requestPath: path,
+      requestUrl: `${API_BASE}${path}`,
+      status: response.status,
+      responseText: text,
+      apiBase: API_BASE,
+      origin: location.origin,
+    });
     throw new Error(text || "下载失败");
   }
   const blob = await response.blob();
@@ -3035,7 +3043,6 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
           <p>示例：<span class="mono">年龄[18,30)*20 & >30*0 & [0,18)*0</span></p>
           <p class="hint">注意：入组条件与名额分配需同时满足，条件之间不可冲突。</p>
         </div>
-        <button class="primary" id="saveExperimentRules">保存条件设置</button>
       </div>
       <div class="admin-right">
         <form class="form-grid" id="adminEditInfoForm">
@@ -3125,10 +3132,6 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
             <label><input type="checkbox" name="allowed_devices" value="mobile" />手机</label>
           </fieldset>
           <label>
-            <input type="checkbox" id="adminEditSameDeviceSingleAccount" ${Number(experiment.same_device_single_account ?? 1) !== 0 ? "checked" : ""} />
-            同一实验中，同一设备禁止切换不同账号重复报名
-          </label>
-          <label>
             内容简介
             <textarea name="description" rows="3" id="adminEditDescription">${experiment.description || ""}</textarea>
           </label>
@@ -3148,7 +3151,13 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
             报酬
             <input name="reward" id="adminEditReward" value="${experiment.reward || ""}" />
           </label>
-          <button type="button" class="primary" id="saveExperimentInfo">保存实验信息</button>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+            <label style="display:flex;align-items:center;gap:8px;margin:0;">
+              <input type="checkbox" id="adminEditSameDeviceSingleAccount" ${Number(experiment.same_device_single_account ?? 1) !== 0 ? "checked" : ""} />
+              <span>同一实验中，同一设备禁止切换不同账号重复报名</span>
+            </label>
+            <button type="button" class="primary" id="saveExperimentInfo" style="width:auto;min-width:160px;">保存实验信息</button>
+          </div>
         </form>
         <button type="button" class="ghost danger hidden" id="deleteExperimentBtn">删除实验</button>
       </div>
@@ -3169,7 +3178,6 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
   `;
 
   const pauseBtn = panel.querySelector("#pauseExperimentBtn");
-  const saveRulesBtn = panel.querySelector("#saveExperimentRules");
   const saveInfoBtn = panel.querySelector("#saveExperimentInfo");
   const deleteBtn = panel.querySelector("#deleteExperimentBtn");
   const editConditions = panel.querySelector("#adminEditConditions");
@@ -3369,25 +3377,6 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
     }
   });
 
-  saveRulesBtn.addEventListener("click", async () => {
-    try {
-      await apiRequest("/admin/experiment/update", {
-        method: "POST",
-        json: {
-          experiment_uid: experiment.experiment_uid,
-          conditions_text: editConditions.value,
-          quotas_text: editQuota.value,
-        },
-      });
-      setStatus(adminExperimentStatus, "条件设置已保存");
-    } catch (error) {
-      setStatus(adminExperimentStatus, error.message, true);
-      if (error.message.includes("无法解析")) {
-        alert("入组条件或名额分配格式不正确。示例：\n年龄>=18 & 年龄<30 & (左眼近视度数<600|右眼近视度数<600)\nALL*20");
-      }
-    }
-  });
-
   const loadScheduleFromSlots = (sourceSlots) => {
     const allSlots = sourceSlots
       .map(convertSlotToSchedule)
@@ -3473,6 +3462,8 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
           duration_min: editDuration?.value || null,
           schedule_slots_required: editSlotRequirement?.value || "=1",
           reward: editReward?.value || null,
+          conditions_text: editConditions?.value || "",
+          quotas_text: editQuota?.value || "",
           access_control_mode: editAccessControlMode?.value || "none",
           allowed_devices: allowedDevices,
           same_device_single_account: editSameDeviceSingleAccount?.checked !== false,
@@ -3952,10 +3943,22 @@ async function applyExperiment(exp, selectedSlots) {
 
 async function downloadParticipantsCsv(experimentUid) {
   const encoded = encodeURIComponent(experimentUid);
-  await downloadApiFile(
+  const candidates = [
     `/admin/experiment/participants/export?experiment_uid=${encoded}`,
-    `${experimentUid}_participants.csv`
-  );
+    `/admin/experiment/participants/download?experiment_uid=${encoded}`,
+    `/admin/experiment/participant/export?experiment_uid=${encoded}`,
+  ];
+  let lastError = null;
+  for (const path of candidates) {
+    try {
+      await downloadApiFile(path, `${experimentUid}_participants.csv`);
+      return;
+    } catch (error) {
+      lastError = error;
+      console.warn("被试表下载端点失败，尝试下一个", { path, error: String(error?.message || error) });
+    }
+  }
+  throw lastError || new Error("下载失败");
 }
 
 tabs.forEach((tab) => {
