@@ -497,6 +497,7 @@ const accessControlModeField = document.getElementById("accessControlModeField")
 const accessControlMode = document.getElementById("accessControlMode");
 const accessControlHint = document.getElementById("accessControlHint");
 const allowedDevicesField = document.getElementById("allowedDevicesField");
+const sameDeviceSingleAccount = document.getElementById("sameDeviceSingleAccount");
 const tokenScriptHelp = document.getElementById("tokenScriptHelp");
 const tokenScriptMask = null;
 const tokenScriptBlock = null;
@@ -532,6 +533,96 @@ function getCheckedValues(form, name) {
   if (!form) return [];
   return Array.from(form.querySelectorAll(`input[name="${name}"]:checked`))
     .map((input) => input.value);
+}
+
+function getOrCreateDeviceFingerprint() {
+  const key = "va_device_fingerprint";
+  try {
+    const existing = localStorage.getItem(key);
+    if (existing) return existing;
+    const random = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+    localStorage.setItem(key, random);
+    return random;
+  } catch {
+    return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+  }
+}
+
+function hasAdminDraftContent() {
+  if (!adminExperimentForm) return false;
+  const name = adminExperimentForm.querySelector("input[name='name']")?.value?.trim();
+  const desc = adminExperimentForm.querySelector("textarea[name='description']")?.value?.trim();
+  const notes = adminExperimentForm.querySelector("textarea[name='notes']")?.value?.trim();
+  const quota = adminQuota?.value?.trim();
+  const cond = adminConditions?.value?.trim();
+  return Boolean(name || desc || notes || (quota && quota !== "性别=男*10 & =女*10\n年龄[18,30)*20 & >30*0 & [0,18)*0\n左/右利手=右*20") || (cond && cond !== "年龄>=18\n左/右利手=右") || scheduleState.slots.length || uploadState.files.length);
+}
+
+function copyExperimentToNewDraft(experiment) {
+  if (!adminExperimentForm || !experiment) return;
+  if (state.adminActiveTab !== "new" && hasAdminDraftContent()) {
+    const ok = window.confirm("新实验草稿将被复制内容覆盖（排期不会复制）。是否继续？");
+    if (!ok) return;
+  }
+
+  state.adminActiveTab = "new";
+  renderAdminTabs();
+
+  const setValue = (selector, value) => {
+    const el = adminExperimentForm.querySelector(selector);
+    if (el) el.value = value ?? "";
+  };
+
+  setValue("input[name='contact_phone']", experiment.contact_phone || "");
+  setValue("input[name='name']", `${experiment.name || ""}-复制`);
+  setValue("select[name='type']", experiment.type || "");
+  setValue("textarea[name='description']", experiment.description || "");
+  setValue("textarea[name='notes']", experiment.notes || "");
+  setValue("input[name='duration_min']", experiment.duration_min || "");
+  setValue("input[name='reward']", experiment.reward || "");
+  setValue("input[name='schedule_slots_required']", experiment.schedule_slots_required || "=1");
+
+  const location = experiment.location || "在线";
+  const locationSelectEl = adminExperimentForm.querySelector("select[name='location']");
+  const knownLocations = ["在线", "604-2", "604-3", "604-4", "604-5", "其他"];
+  if (locationSelectEl) {
+    locationSelectEl.value = knownLocations.includes(location) ? location : "其他";
+    locationSelectEl.dispatchEvent(new Event("change"));
+  }
+  if (!knownLocations.includes(location)) {
+    setValue("input[name='location_custom']", location);
+  }
+  setValue("input[name='location_link']", experiment.location_link || "");
+
+  const accessModeEl = adminExperimentForm.querySelector("select[name='access_control_mode']");
+  if (accessModeEl) {
+    accessModeEl.value = experiment.access_control_mode || "none";
+    accessModeEl.dispatchEvent(new Event("change"));
+  }
+
+  const allowedSet = new Set(safeJsonParse(experiment.allowed_devices_json, ["desktop", "tablet", "mobile"]));
+  adminExperimentForm.querySelectorAll("input[name='allowed_devices']").forEach((input) => {
+    input.checked = allowedSet.has(input.value);
+  });
+
+  if (sameDeviceSingleAccount) {
+    sameDeviceSingleAccount.checked = Number(experiment.same_device_single_account ?? 1) !== 0;
+  }
+
+  if (scheduleRequired) {
+    scheduleRequired.value = Number(experiment.schedule_required) === 1 ? "yes" : "no";
+    scheduleRequired.dispatchEvent(new Event("change"));
+  }
+
+  if (adminConditions) adminConditions.value = experiment.conditions_text || "";
+  if (adminQuota) adminQuota.value = experiment.quotas_text || "";
+
+  // 明确不复制排期和上传内容
+  scheduleState.slots = [];
+  renderScheduleGrid();
+  resetUploadState();
+  setUploadMode("link");
+  setStatus(adminExperimentStatus, `已复制「${experiment.name}」配置到新实验（排期未复制）`);
 }
 
 function updateAccessControlHint(selectEl, hintEl) {
@@ -2500,6 +2591,29 @@ function renderAdminTabs() {
     const capacity = exp.capacity_total ?? 0;
     tab.title = `ID: ${exp.experiment_uid}\n类型: ${exp.type}\n已招募: ${recruited}/${capacity}\n最后修改: ${updatedLabel}`;
     tab.addEventListener("click", () => selectAdminTab(exp.experiment_uid));
+    tab.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      const ok = window.confirm(`复制实验「${exp.name}」配置到“新实验”？\n（不会复制排期）`);
+      if (!ok) return;
+      copyExperimentToNewDraft(exp);
+    });
+    let longPressTimer = null;
+    tab.addEventListener("touchstart", () => {
+      longPressTimer = setTimeout(() => {
+        longPressTimer = null;
+        const ok = window.confirm(`复制实验「${exp.name}」配置到“新实验”？\n（不会复制排期）`);
+        if (!ok) return;
+        copyExperimentToNewDraft(exp);
+      }, 650);
+    }, { passive: true });
+    const clearLongPress = () => {
+      if (!longPressTimer) return;
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    };
+    tab.addEventListener("touchend", clearLongPress, { passive: true });
+    tab.addEventListener("touchmove", clearLongPress, { passive: true });
+    tab.addEventListener("touchcancel", clearLongPress, { passive: true });
     adminTabs.appendChild(tab);
   });
 
@@ -2665,6 +2779,10 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
             <label><input type="checkbox" name="allowed_devices" value="mobile" />手机</label>
           </fieldset>
           <label>
+            <input type="checkbox" id="adminEditSameDeviceSingleAccount" ${Number(experiment.same_device_single_account ?? 1) !== 0 ? "checked" : ""} />
+            同一实验中，同一设备禁止切换不同账号重复报名
+          </label>
+          <label>
             内容简介
             <textarea name="description" rows="3" id="adminEditDescription">${experiment.description || ""}</textarea>
           </label>
@@ -2728,6 +2846,7 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
   const editAccessControlHint = panel.querySelector("#adminEditAccessControlHint");
   const editTokenScriptHelp = panel.querySelector("#adminEditTokenScriptHelp");
   const editAllowedDevices = panel.querySelector("#adminEditAllowedDevices");
+  const editSameDeviceSingleAccount = panel.querySelector("#adminEditSameDeviceSingleAccount");
   const editContactPhone = panel.querySelector("#adminEditContactPhone");
   const editDescription = panel.querySelector("#adminEditDescription");
   const editNotes = panel.querySelector("#adminEditNotes");
@@ -2933,6 +3052,7 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
           reward: editReward?.value || null,
           access_control_mode: editAccessControlMode?.value || "none",
           allowed_devices: allowedDevices,
+          same_device_single_account: editSameDeviceSingleAccount?.checked !== false,
         },
       });
       setStatus(adminExperimentStatus, "实验信息已保存");
@@ -3230,6 +3350,7 @@ async function applyExperiment(exp, selectedSlots) {
       experiment_uid: exp.experiment_uid,
       slot_ids: slotIds.length ? slotIds : undefined,
       slot_id: slotIds.length === 1 ? slotIds[0] : undefined,
+      device_fingerprint: getOrCreateDeviceFingerprint(),
     };
     const data = await apiRequest("/experiments/apply", { method: "POST", json: payload });
     if (data.location === "在线" && (data.access_url || data.location_link)) {
@@ -3741,6 +3862,7 @@ adminExperimentForm?.addEventListener("submit", async (event) => {
       schedule_slots: schedulePayload,
       access_control_mode: accessMode,
       allowed_devices: allowedDevices,
+      same_device_single_account: sameDeviceSingleAccount?.checked !== false,
       device_info: navigator.platform || "",
       browser_info: navigator.userAgent || "",
     };
