@@ -25,6 +25,7 @@ const uploadState = {
   files: [],
   totalBytes: 0,
   uploadedBytes: 0,
+  pathOptions: { stripTopLevel: false },
   hasIndex: false,
   uploading: false,
   ready: false,
@@ -138,6 +139,7 @@ function resetUploadState() {
   uploadState.files = [];
   uploadState.totalBytes = 0;
   uploadState.uploadedBytes = 0;
+  uploadState.pathOptions = { stripTopLevel: false };
   uploadState.hasIndex = false;
   uploadState.uploading = false;
   uploadState.ready = false;
@@ -269,21 +271,36 @@ async function getFilesFromDrop(event) {
   return collected;
 }
 
-function normalizeUploadPath(file) {
+function normalizeUploadPath(file, options = {}) {
   const raw = file?.webkitRelativePath || file?.name || "";
   const parts = raw.split("/").filter(Boolean);
-  if (parts.length > 1) parts.shift();
+  if (options.stripTopLevel && parts.length > 1) parts.shift();
   return parts.join("/");
 }
 
+function buildUploadPathOptions(files) {
+  const rawPaths = (files || [])
+    .map((file) => String(file?.webkitRelativePath || file?.name || ""))
+    .filter(Boolean);
+  if (!rawPaths.length) return { stripTopLevel: false };
+  const segments = rawPaths.map((path) => path.split("/").filter(Boolean));
+  if (segments.some((parts) => parts.length <= 1)) {
+    return { stripTopLevel: false };
+  }
+  const topLevel = segments[0][0];
+  const shareSameTopLevel = segments.every((parts) => parts[0] === topLevel);
+  return { stripTopLevel: shareSameTopLevel };
+}
+
 function describeUploadSelection(files) {
+  const pathOptions = buildUploadPathOptions(files);
   const totalBytes = files.reduce((sum, file) => sum + (file.size || 0), 0);
   const hasIndex = files.some((file) => {
-    const path = normalizeUploadPath(file).toLowerCase();
+    const path = normalizeUploadPath(file, pathOptions).toLowerCase();
     return path === "index.html" || path.endsWith("/index.html");
   });
   const mb = (totalBytes / (1024 * 1024)).toFixed(1);
-  return { totalBytes, hasIndex, mb };
+  return { totalBytes, hasIndex, mb, pathOptions };
 }
 
 const DEFAULT_UNITS = [
@@ -545,16 +562,19 @@ function getCheckedValues(form, name) {
 }
 
 function getOrCreateDeviceFingerprint() {
-  const key = "va_device_fingerprint";
-  try {
-    const existing = localStorage.getItem(key);
-    if (existing) return existing;
-    const random = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
-    localStorage.setItem(key, random);
-    return random;
-  } catch {
-    return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
-  }
+  const parts = [
+    navigator.userAgent || "",
+    navigator.platform || "",
+    navigator.language || "",
+    navigator.vendor || "",
+    String(navigator.hardwareConcurrency || ""),
+    String(navigator.deviceMemory || ""),
+    `${screen.width || 0}x${screen.height || 0}`,
+    String(window.devicePixelRatio || 1),
+    Intl.DateTimeFormat().resolvedOptions().timeZone || "",
+    String(navigator.maxTouchPoints || 0),
+  ];
+  return parts.join("|");
 }
 
 function hasAdminDraftContent() {
@@ -577,8 +597,9 @@ function refreshAdminTabCopyHint() {
 
 function filterUploadFiles(inputFiles) {
   const files = Array.from(inputFiles || []);
+  const pathOptions = buildUploadPathOptions(files);
   return files.filter((file) => {
-    const path = normalizeUploadPath(file).toLowerCase();
+    const path = normalizeUploadPath(file, pathOptions).toLowerCase();
     if (!path) return false;
     return !(path === ".git" || path.startsWith(".git/") || path.includes("/.git/"));
   });
@@ -744,7 +765,8 @@ async function replaceHostedUpload(prefix, files, statusEl) {
   if (!prefix) throw new Error("上传前缀缺失");
   const filtered = filterUploadFiles(files);
   if (!filtered.length) throw new Error("未检测到可上传文件（.git 已自动忽略）");
-  const { totalBytes, hasIndex } = describeUploadSelection(filtered);
+  const { totalBytes, hasIndex, pathOptions } = describeUploadSelection(filtered);
+  uploadState.pathOptions = pathOptions;
   if (!hasIndex) throw new Error("缺少 index.html，请检查文件夹");
   if (totalBytes > 100 * 1024 * 1024) throw new Error("文件夹总大小超过 100MB");
 
@@ -766,7 +788,7 @@ async function replaceHostedUpload(prefix, files, statusEl) {
 }
 
 async function uploadHostedFile(prefix, file) {
-  const path = normalizeUploadPath(file);
+  const path = normalizeUploadPath(file, uploadState.pathOptions || { stripTopLevel: false });
   if (!path) return;
   await apiRequest("/admin/experiment/upload/file", {
     method: "POST",
@@ -835,9 +857,10 @@ async function handleUploadSelection(fileList) {
     return;
   }
   setUploadMode("upload");
-  const { totalBytes, hasIndex, mb } = describeUploadSelection(files);
+  const { totalBytes, hasIndex, mb, pathOptions } = describeUploadSelection(files);
   uploadState.files = files;
   uploadState.totalBytes = totalBytes;
+  uploadState.pathOptions = pathOptions;
   uploadState.hasIndex = hasIndex;
   if (uploadZoneMeta) {
     uploadZoneMeta.textContent = `已选择 ${files.length} 个文件，约 ${mb} MB${hasIndex ? "" : "（缺少 index.html）"}`;
@@ -1454,8 +1477,13 @@ function openSlotActionMenu(x, y, actions) {
 }
 
 function applySlotNudge(delta) {
-  if (!slotNudgeContext?.slot || !slotNudgeContext?.renderFn || !slotNudgeContext?.stateRef) return;
-  const { slot, renderFn, stateRef, mode, edge } = slotNudgeContext;
+  if (!slotNudgeContext?.renderFn || !slotNudgeContext?.stateRef) return;
+  const { renderFn, stateRef, mode, edge } = slotNudgeContext;
+  const selectedId = Array.from(stateRef.selectedIds || [])[0];
+  const slot = selectedId
+    ? stateRef.slots.find((item) => item.id === selectedId)
+    : slotNudgeContext.slot;
+  if (!slot) return;
   const minDuration = 10;
   if (mode === "resize") {
     if (edge === "top") {
@@ -1532,20 +1560,31 @@ function showSlotNudgeControls(context) {
 }
 
 function startTouchDrag(slot, stateRef, renderFn) {
+  let activeTouchId = null;
   let dragStartY = null;
   let dragStartMin = slot.startMin;
   let dragEndMin = slot.endMin;
   showSlotNudgeControls({ slot, stateRef, renderFn, mode: "move", edge: null });
+
+  const resolveTouch = (event) => {
+    if (activeTouchId === null) {
+      const initial = event.touches?.[0] || event.changedTouches?.[0] || null;
+      if (initial) activeTouchId = initial.identifier;
+      return initial;
+    }
+    const allTouches = [...(event.touches || []), ...(event.changedTouches || [])];
+    return allTouches.find((touch) => touch.identifier === activeTouchId) || null;
+  };
+
   const onMove = (event) => {
-    const touch = event.touches[0];
+    const touch = resolveTouch(event);
     if (!touch) return;
     if (dragStartY === null) {
-      dragStartY = touch.clientY;
+      dragStartY = touch.pageY;
       dragStartMin = slot.startMin;
       dragEndMin = slot.endMin;
-      return;
     }
-    const delta = touch.clientY - dragStartY;
+    const delta = touch.pageY - dragStartY;
     const step = Math.round(delta / (PX_PER_MIN * 10)) * 10;
     const duration = dragEndMin - dragStartMin;
     let nextStart = Math.max(0, Math.min(1440 - duration, dragStartMin + step));
@@ -1558,30 +1597,49 @@ function startTouchDrag(slot, stateRef, renderFn) {
     renderFn();
     event.preventDefault();
   };
-  const onEnd = () => {
+  const onEnd = (event) => {
+    if (activeTouchId !== null) {
+      const hasTargetEnded = [...(event.changedTouches || [])].some((touch) => touch.identifier === activeTouchId);
+      if (!hasTargetEnded) return;
+    }
     document.removeEventListener("touchmove", onMove);
     document.removeEventListener("touchend", onEnd);
+    document.removeEventListener("touchcancel", onEnd);
+    activeTouchId = null;
     mergeOverlappingSlots(stateRef);
     renderFn();
   };
   document.addEventListener("touchmove", onMove, { passive: false });
   document.addEventListener("touchend", onEnd);
+  document.addEventListener("touchcancel", onEnd);
 }
 
 function startTouchResize(slotEl, slot, stateRef, renderFn, startY, preferredEdge = null) {
   let resizeEdge = preferredEdge;
+  let activeTouchId = null;
   const body = slotEl.closest(".schedule-day-body");
   if (!body) return;
-  const bodyTop = body.getBoundingClientRect().top;
-  const viewOffset = getViewOffsetPx(stateRef);
+
+  const resolveTouch = (event) => {
+    if (activeTouchId === null) {
+      const initial = event.touches?.[0] || event.changedTouches?.[0] || null;
+      if (initial) activeTouchId = initial.identifier;
+      return initial;
+    }
+    const allTouches = [...(event.touches || []), ...(event.changedTouches || [])];
+    return allTouches.find((touch) => touch.identifier === activeTouchId) || null;
+  };
+
   const onMove = (event) => {
-    const touch = event.touches[0];
+    const touch = resolveTouch(event);
     if (!touch) return;
     if (!resizeEdge) {
       const rect = slotEl.getBoundingClientRect();
       resizeEdge = touch.clientY < rect.top + rect.height / 2 ? "top" : "bottom";
       showSlotNudgeControls({ slot, stateRef, renderFn, mode: "resize", edge: resizeEdge });
     }
+    const bodyTop = body.getBoundingClientRect().top;
+    const viewOffset = getViewOffsetPx(stateRef);
     const offsetY = touch.clientY - bodyTop + viewOffset;
     const targetMin = Math.max(0, Math.round(offsetY / PX_PER_MIN / 10) * 10);
     const minDuration = 10;
@@ -1599,14 +1657,21 @@ function startTouchResize(slotEl, slot, stateRef, renderFn, startY, preferredEdg
     renderFn();
     event.preventDefault();
   };
-  const onEnd = () => {
+  const onEnd = (event) => {
+    if (activeTouchId !== null) {
+      const hasTargetEnded = [...(event.changedTouches || [])].some((touch) => touch.identifier === activeTouchId);
+      if (!hasTargetEnded) return;
+    }
     document.removeEventListener("touchmove", onMove);
     document.removeEventListener("touchend", onEnd);
+    document.removeEventListener("touchcancel", onEnd);
+    activeTouchId = null;
     mergeOverlappingSlots(stateRef);
     renderFn();
   };
   document.addEventListener("touchmove", onMove, { passive: false });
   document.addEventListener("touchend", onEnd);
+  document.addEventListener("touchcancel", onEnd);
 }
 
 function attachMobileSlotHandlers(slotEl, slot, stateRef, renderFn, onDelete, onCapacityEdit, onLockedTap) {
