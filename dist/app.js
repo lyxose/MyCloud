@@ -2571,6 +2571,7 @@ async function loadExperiments() {
   if (!state.token) return;
   const container = experimentForm?.querySelector(".experiment-list");
   setLoadingBlock(container, "正在加载可报名实验...");
+  setLoadingBlock(appliedExperimentList, "正在加载已报名实验...");
   try {
     const data = await apiRequest("/experiments", { method: "GET" });
     state.experiments = data.experiments || [];
@@ -2763,6 +2764,7 @@ function renderAppliedExperiments() {
       type: exp?.type || record?.experiment_type || "-",
       contact: exp?.contact_phone || "",
       notes: exp?.notes || "",
+      accessLink: record?.access_url || record?.location_link || exp?.location_link || "",
       latestTime: sortTime,
       slotLabel: startTimes.length
         ? formatSlotDateTime(new Date(Math.max(...startTimes)).toISOString())
@@ -2777,6 +2779,7 @@ function renderAppliedExperiments() {
     card.className = "experiment-card";
     const contact = item.contact ? `主试联系方式：${item.contact}` : "主试联系方式：-";
     const notice = item.notes ? `注意：${item.notes}` : "";
+    const hasOnlineLink = typeof item.accessLink === "string" && /^https?:\/\//i.test(item.accessLink);
     card.innerHTML = `
       <div class="experiment-card-header">
         <strong>${item.name}</strong>
@@ -2786,8 +2789,24 @@ function renderAppliedExperiments() {
         <p class="hint">预约时间：${item.slotLabel}</p>
         ${notice ? `<p class="notice">${notice}</p>` : ""}
         <p class="hint">${contact}</p>
+        ${hasOnlineLink ? `<button type="button" class="ghost" data-action="copy-link">复制实验链接</button>` : ""}
       </div>
     `;
+    if (hasOnlineLink) {
+      card.querySelector("[data-action='copy-link']")?.addEventListener("click", async () => {
+        try {
+          if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(item.accessLink);
+            setStatus(experimentStatus, "已复制实验链接。请尽快在符合要求设备中打开。");
+          } else {
+            window.prompt("复制实验链接", item.accessLink);
+            setStatus(experimentStatus, "请复制链接并在符合要求设备中打开。");
+          }
+        } catch {
+          window.prompt("复制实验链接", item.accessLink);
+        }
+      });
+    }
     appliedExperimentList.appendChild(card);
   });
 }
@@ -3624,10 +3643,16 @@ async function loadParticipantsForExperiment(experimentUid, list) {
     participants.forEach((participant) => {
       const item = document.createElement("div");
       item.className = "admin-participant-item";
+      const isRejected = String(participant.participant_status || participant.status || "").toLowerCase() === "rejected" || participant.rejected === true;
+      if (isRejected) item.classList.add("rejected");
       const startText = participant.slot?.start_time ? formatSlotDateTime(participant.slot.start_time) : "-";
+      const rejectMeta = isRejected
+        ? `（已拒绝${participant.rejected_at ? `：${participant.rejected_at}` : ""}${participant.rejection_reason ? `，原因：${participant.rejection_reason}` : ""}）`
+        : "";
       item.innerHTML = `
-        <span>${participant.name} (${participant.user_uid}) · ${startText}</span>
+        <span>${participant.name} (${participant.user_uid}) · ${startText} ${rejectMeta}</span>
         <button type="button" class="ghost" data-action="download-user">下载该被试实验数据</button>
+        <button type="button" class="ghost" data-action="reject" ${isRejected ? "disabled" : ""}>${isRejected ? "已拒绝" : "拒绝被试"}</button>
         <button type="button" class="ghost" data-action="feedback">添加评价</button>
       `;
       item.querySelector("[data-action='download-user']")?.addEventListener("click", async () => {
@@ -3647,6 +3672,25 @@ async function loadParticipantsForExperiment(experimentUid, list) {
           method: "POST",
           json: { user_uid: participant.user_uid, experiment_uid: experimentUid, feedback },
         });
+      });
+      item.querySelector("[data-action='reject']")?.addEventListener("click", async () => {
+        const reason = prompt("可选：输入拒绝原因（留空可直接确认）", "") ?? "";
+        const ok = window.confirm(`确认拒绝 ${participant.name}（${participant.user_uid}）？\n拒绝后该记录不计入名额与完整数据集。`);
+        if (!ok) return;
+        try {
+          await apiRequest("/admin/experiment/participant/reject", {
+            method: "POST",
+            json: {
+              experiment_uid: experimentUid,
+              user_uid: participant.user_uid,
+              slot_id: participant.slot?.id,
+              reason,
+            },
+          });
+          await loadParticipantsForExperiment(experimentUid, list);
+        } catch (error) {
+          alert(error.message || "拒绝失败");
+        }
       });
       list.appendChild(item);
     });
