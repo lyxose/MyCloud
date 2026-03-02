@@ -29,6 +29,7 @@ const uploadState = {
   uploading: false,
   ready: false,
   mode: "link",
+  source: null,
 };
 
 // NOTE: Keep these snippets free of `${...}` to avoid host template interpolation at runtime.
@@ -140,6 +141,7 @@ function resetUploadState() {
   uploadState.hasIndex = false;
   uploadState.uploading = false;
   uploadState.ready = false;
+  uploadState.source = null;
   if (uploadZoneMeta) uploadZoneMeta.textContent = "需包含 index.html";
   setUploadStatusText("");
 }
@@ -179,16 +181,20 @@ function setUploadMode(mode) {
   if (!isOnline) {
     uploadPanelLink?.classList.add("hidden");
     uploadPanelUpload?.classList.add("hidden");
+    uploadPanelGithub?.classList.add("hidden");
+    downloadPolicyField?.classList.add("hidden");
     return;
   }
-  uploadState.mode = mode === "upload" ? "upload" : "link";
+  uploadState.mode = ["link", "upload", "github"].includes(mode) ? mode : "link";
   uploadTabs?.querySelectorAll(".mini-tab").forEach((tab) => {
     tab.classList.toggle("active", tab.dataset.uploadTab === uploadState.mode);
   });
   uploadPanelLink?.classList.toggle("hidden", uploadState.mode !== "link");
   uploadPanelUpload?.classList.toggle("hidden", uploadState.mode !== "upload");
-  setHostedLinkMode(uploadState.mode === "upload");
-  applyAccessModeRules(uploadState.mode === "upload");
+  uploadPanelGithub?.classList.toggle("hidden", uploadState.mode !== "github");
+  downloadPolicyField?.classList.toggle("hidden", !(uploadState.mode === "upload" || uploadState.mode === "github"));
+  setHostedLinkMode(uploadState.mode === "upload" || uploadState.mode === "github");
+  applyAccessModeRules(uploadState.mode === "upload" || uploadState.mode === "github");
   updateTokenScriptHelp();
   syncAdminHelpCardHeight();
 }
@@ -457,6 +463,7 @@ const contactForm = document.getElementById("contactForm");
 const contactStatus = document.getElementById("contactStatus");
 
 const adminArea = document.getElementById("adminArea");
+const adminTabCopyHint = document.getElementById("adminTabCopyHint");
 const adminTabs = document.getElementById("adminTabs");
 const adminPanelNew = document.getElementById("adminPanelNew");
 const adminExperimentForm = document.getElementById("adminExperimentForm");
@@ -486,11 +493,13 @@ const locationCustomField = document.getElementById("locationCustomField");
 const uploadTabs = document.getElementById("uploadTabs");
 const uploadPanelLink = document.getElementById("uploadPanelLink");
 const uploadPanelUpload = document.getElementById("uploadPanelUpload");
+const uploadPanelGithub = document.getElementById("uploadPanelGithub");
 const hostedUploadField = document.getElementById("hostedUploadField");
 const uploadZone = document.getElementById("uploadZone");
 const uploadFolderInput = document.getElementById("uploadFolderInput");
 const uploadZoneMeta = document.getElementById("uploadZoneMeta");
 const uploadStatus = document.getElementById("uploadStatus");
+const githubRepoInput = document.getElementById("githubRepoInput");
 const downloadPolicyField = document.getElementById("downloadPolicyField");
 const downloadPolicy = document.getElementById("downloadPolicy");
 const accessControlModeField = document.getElementById("accessControlModeField");
@@ -553,9 +562,26 @@ function hasAdminDraftContent() {
   const name = adminExperimentForm.querySelector("input[name='name']")?.value?.trim();
   const desc = adminExperimentForm.querySelector("textarea[name='description']")?.value?.trim();
   const notes = adminExperimentForm.querySelector("textarea[name='notes']")?.value?.trim();
+  const githubRepo = adminExperimentForm.querySelector("input[name='github_repo']")?.value?.trim();
   const quota = adminQuota?.value?.trim();
   const cond = adminConditions?.value?.trim();
-  return Boolean(name || desc || notes || (quota && quota !== "性别=男*10 & =女*10\n年龄[18,30)*20 & >30*0 & [0,18)*0\n左/右利手=右*20") || (cond && cond !== "年龄>=18\n左/右利手=右") || scheduleState.slots.length || uploadState.files.length);
+  return Boolean(name || desc || notes || githubRepo || (quota && quota !== "性别=男*10 & =女*10\n年龄[18,30)*20 & >30*0 & [0,18)*0\n左/右利手=右*20") || (cond && cond !== "年龄>=18\n左/右利手=右") || scheduleState.slots.length || uploadState.files.length);
+}
+
+function refreshAdminTabCopyHint() {
+  if (!adminTabCopyHint) return;
+  adminTabCopyHint.textContent = IS_COARSE_POINTER
+    ? "提示：长按任一实验标签，可复制该实验配置到“新实验”（不复制排期）"
+    : "提示：右键任一实验标签，可复制该实验配置到“新实验”（不复制排期）";
+}
+
+function filterUploadFiles(inputFiles) {
+  const files = Array.from(inputFiles || []);
+  return files.filter((file) => {
+    const path = normalizeUploadPath(file).toLowerCase();
+    if (!path) return false;
+    return !(path === ".git" || path.startsWith(".git/") || path.includes("/.git/"));
+  });
 }
 
 function copyExperimentToNewDraft(experiment) {
@@ -583,6 +609,10 @@ function copyExperimentToNewDraft(experiment) {
   setValue("input[name='schedule_slots_required']", experiment.schedule_slots_required || "=1");
 
   const location = experiment.location || "在线";
+  const accessConfig = safeJsonParse(experiment.access_control_config_json, null) || {};
+  const sourceType = accessConfig?.source === "github"
+    ? "github"
+    : (accessConfig?.hosted ? "upload" : "link");
   const locationSelectEl = adminExperimentForm.querySelector("select[name='location']");
   const knownLocations = ["在线", "604-2", "604-3", "604-4", "604-5", "其他"];
   if (locationSelectEl) {
@@ -592,7 +622,8 @@ function copyExperimentToNewDraft(experiment) {
   if (!knownLocations.includes(location)) {
     setValue("input[name='location_custom']", location);
   }
-  setValue("input[name='location_link']", experiment.location_link || "");
+  setValue("input[name='location_link']", sourceType === "link" ? (experiment.location_link || "") : "");
+  setValue("input[name='github_repo']", accessConfig?.github_repo || "");
 
   const accessModeEl = adminExperimentForm.querySelector("select[name='access_control_mode']");
   if (accessModeEl) {
@@ -609,6 +640,14 @@ function copyExperimentToNewDraft(experiment) {
     sameDeviceSingleAccount.checked = Number(experiment.same_device_single_account ?? 1) !== 0;
   }
 
+  if (downloadPolicy) {
+    const copiedPolicy = accessConfig?.download_policy || "upload_only";
+    const validPolicy = ["download_and_upload", "upload_only", "download_only"].includes(copiedPolicy)
+      ? copiedPolicy
+      : "upload_only";
+    downloadPolicy.value = validPolicy;
+  }
+
   if (scheduleRequired) {
     scheduleRequired.value = Number(experiment.schedule_required) === 1 ? "yes" : "no";
     scheduleRequired.dispatchEvent(new Event("change"));
@@ -617,11 +656,29 @@ function copyExperimentToNewDraft(experiment) {
   if (adminConditions) adminConditions.value = experiment.conditions_text || "";
   if (adminQuota) adminQuota.value = experiment.quotas_text || "";
 
-  // 明确不复制排期和上传内容
+  // 明确不复制排期；在线资源模式会复制引用配置
   scheduleState.slots = [];
   renderScheduleGrid();
-  resetUploadState();
-  setUploadMode("link");
+  if (sourceType === "upload") {
+    resetUploadState();
+    uploadState.prefix = accessConfig?.asset_prefix || null;
+    uploadState.ready = Boolean(uploadState.prefix);
+    uploadState.hasIndex = Boolean(uploadState.prefix);
+    uploadState.source = "hosted";
+    setUploadMode("upload");
+    setUploadStatusText(uploadState.prefix
+      ? "已复制在线实验文件配置（可重新上传覆盖）"
+      : "原实验上传前缀缺失，请重新上传实验文件夹", !uploadState.prefix);
+  } else if (sourceType === "github") {
+    resetUploadState();
+    uploadState.prefix = accessConfig?.asset_prefix || null;
+    uploadState.source = "github";
+    setUploadMode("github");
+    setUploadStatusText("已复制 GitHub 仓库配置");
+  } else {
+    resetUploadState();
+    setUploadMode("link");
+  }
   setStatus(adminExperimentStatus, `已复制「${experiment.name}」配置到新实验（排期未复制）`);
 }
 
@@ -663,6 +720,51 @@ async function initHostedUpload() {
   uploadState.prefix = result.prefix;
 }
 
+async function clearHostedPrefix(prefix) {
+  await apiRequest("/admin/experiment/upload/clear", {
+    method: "POST",
+    json: { prefix },
+  });
+}
+
+async function getHostedUploadSummary(prefix) {
+  return apiRequest(`/admin/experiment/upload/list?prefix=${encodeURIComponent(prefix)}`, {
+    method: "GET",
+  });
+}
+
+function formatBytes(bytes) {
+  const n = Number(bytes) || 0;
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function replaceHostedUpload(prefix, files, statusEl) {
+  if (!prefix) throw new Error("上传前缀缺失");
+  const filtered = filterUploadFiles(files);
+  if (!filtered.length) throw new Error("未检测到可上传文件（.git 已自动忽略）");
+  const { totalBytes, hasIndex } = describeUploadSelection(filtered);
+  if (!hasIndex) throw new Error("缺少 index.html，请检查文件夹");
+  if (totalBytes > 100 * 1024 * 1024) throw new Error("文件夹总大小超过 100MB");
+
+  if (statusEl) statusEl.textContent = "正在清理旧文件...";
+  await clearHostedPrefix(prefix);
+  if (statusEl) statusEl.textContent = `准备上传 ${filtered.length} 个文件...`;
+
+  let uploadedBytes = 0;
+  for (let index = 0; index < filtered.length; index += 1) {
+    const file = filtered[index];
+    await uploadHostedFile(prefix, file);
+    uploadedBytes += file.size || 0;
+    const percent = totalBytes
+      ? Math.min(100, Math.round((uploadedBytes / totalBytes) * 100))
+      : 0;
+    if (statusEl) statusEl.textContent = `已上传 ${index + 1}/${filtered.length}，${percent}%`;
+  }
+  if (statusEl) statusEl.textContent = "覆盖上传完成";
+}
+
 async function uploadHostedFile(prefix, file) {
   const path = normalizeUploadPath(file);
   if (!path) return;
@@ -681,8 +783,13 @@ async function startHostedUpload(files) {
   if (!files.length) return;
   uploadState.uploading = true;
   uploadState.ready = false;
-  setUploadStatusText("正在初始化上传...");
-  await initHostedUpload();
+  if (!uploadState.prefix) {
+    setUploadStatusText("正在初始化上传...");
+    await initHostedUpload();
+  } else {
+    setUploadStatusText("正在覆盖上传（清理旧文件）...");
+    await clearHostedPrefix(uploadState.prefix);
+  }
   setUploadStatusText(`准备上传 ${files.length} 个文件...`);
   uploadState.uploadedBytes = 0;
   for (let index = 0; index < files.length; index += 1) {
@@ -696,6 +803,7 @@ async function startHostedUpload(files) {
   }
   uploadState.uploading = false;
   uploadState.ready = true;
+  uploadState.source = "hosted";
   setUploadStatusText("上传完成，可以发布实验。 ");
 }
 
@@ -712,10 +820,16 @@ function setHostedLinkMode(isHosted) {
 }
 
 async function handleUploadSelection(fileList) {
-  const files = Array.from(fileList || []);
+  const files = filterUploadFiles(fileList);
+  const existingPrefix = uploadState.prefix;
+  const keepPrefix = uploadState.mode === "upload" && !!existingPrefix;
   resetUploadState();
+  if (keepPrefix) uploadState.prefix = existingPrefix;
   setHostedLinkMode(false);
-  if (!files.length) return;
+  if (!files.length) {
+    setUploadStatusText("未检测到可上传文件（.git 目录已自动忽略）", true);
+    return;
+  }
   if (locationSelect?.value !== "在线") {
     setUploadStatusText("仅在线实验可上传", true);
     return;
@@ -2567,6 +2681,7 @@ async function loadAdminExperiments() {
 
 function renderAdminTabs() {
   if (!adminTabs) return;
+  refreshAdminTabCopyHint();
   adminTabs.innerHTML = "";
   const newTab = document.createElement("button");
   newTab.className = "tab";
@@ -2672,6 +2787,35 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
   adminScheduleState.activeDayIndex = 0;
   adminScheduleState.slots = [];
   adminScheduleState.selectedIds.clear();
+  const detailAccessConfig = safeJsonParse(experiment.access_control_config_json, null) || {};
+  const detailIsHosted = detailAccessConfig?.hosted === true;
+  const detailIsGithub = detailAccessConfig?.source === "github";
+  const detailDownloadPolicy = detailAccessConfig?.download_policy || "upload_only";
+  const sourceCardHtml = detailIsHosted
+    ? `
+      <div class="hosted-assets-card" id="adminHostedAssetsCard">
+        <div class="hosted-assets-row">
+          <strong>在线实验文件</strong>
+          <span class="hint" id="adminHostedAssetsMeta">统计中...</span>
+        </div>
+        <div class="hosted-assets-actions" style="margin-top:0.6rem;">
+          <a class="ghost" id="adminHostedDownloadBtn" href="${experiment.location_link || "#"}" target="_blank" rel="noopener" download>下载 index.html</a>
+          <button type="button" class="ghost" id="adminHostedReuploadBtn">重新上传并覆盖</button>
+          <input type="file" id="adminHostedReuploadInput" webkitdirectory directory multiple style="display:none;" />
+        </div>
+        <div class="hint" id="adminHostedReuploadStatus" style="margin-top:0.45rem;"></div>
+      </div>
+    `
+    : (detailIsGithub
+      ? `
+      <div class="hosted-assets-card" id="adminGithubSourceCard">
+        <div class="hosted-assets-row">
+          <strong>GitHub 实验源</strong>
+          <a class="hint" href="${detailAccessConfig.github_repo || "#"}" target="_blank" rel="noopener">${detailAccessConfig.github_repo || "未设置"}</a>
+        </div>
+      </div>
+    `
+      : "");
   panel.innerHTML = `
     <div class="admin-layout">
       <div class="admin-left">
@@ -2747,6 +2891,19 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
             实验链接
             <input name="location_link" id="adminEditLocationLink" value="${experiment.location_link || ""}" />
           </label>
+          <label id="adminEditGithubRepoField" class="hidden">
+            GitHub仓库地址
+            <input name="github_repo" id="adminEditGithubRepo" value="${detailAccessConfig.github_repo || ""}" />
+          </label>
+          <label id="adminEditDownloadPolicyField" class="hidden">
+            数据保存方式
+            <select id="adminEditDownloadPolicy">
+              <option value="download_and_upload" ${detailDownloadPolicy === "download_and_upload" ? "selected" : ""}>同时上传到服务器并下载到本地</option>
+              <option value="upload_only" ${detailDownloadPolicy === "upload_only" ? "selected" : ""}>仅上传到服务器</option>
+              <option value="download_only" ${detailDownloadPolicy === "download_only" ? "selected" : ""}>仅下载到本地（不推荐）</option>
+            </select>
+          </label>
+          ${sourceCardHtml}
           <label id="adminEditAccessControlModeField" class="hidden">
             在线访问控制
             <select name="access_control_mode" id="adminEditAccessControlMode">
@@ -2841,6 +2998,10 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
   const editLocationCustomField = panel.querySelector("#adminEditLocationCustomField");
   const editLocationLink = panel.querySelector("#adminEditLocationLink");
   const editLocationLinkField = panel.querySelector("#adminEditLocationLinkField");
+  const editGithubRepo = panel.querySelector("#adminEditGithubRepo");
+  const editGithubRepoField = panel.querySelector("#adminEditGithubRepoField");
+  const editDownloadPolicy = panel.querySelector("#adminEditDownloadPolicy");
+  const editDownloadPolicyField = panel.querySelector("#adminEditDownloadPolicyField");
   const editAccessControlMode = panel.querySelector("#adminEditAccessControlMode");
   const editAccessControlModeField = panel.querySelector("#adminEditAccessControlModeField");
   const editAccessControlHint = panel.querySelector("#adminEditAccessControlHint");
@@ -2854,6 +3015,10 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
   const editSlotRequirement = panel.querySelector("#adminEditSlotRequirement");
   const editSlotRequirementField = panel.querySelector("#adminEditSlotRequirementField");
   const editReward = panel.querySelector("#adminEditReward");
+  const hostedMeta = panel.querySelector("#adminHostedAssetsMeta");
+  const hostedReuploadBtn = panel.querySelector("#adminHostedReuploadBtn");
+  const hostedReuploadInput = panel.querySelector("#adminHostedReuploadInput");
+  const hostedReuploadStatus = panel.querySelector("#adminHostedReuploadStatus");
 
   if (editType) editType.value = experiment.type || "";
 
@@ -2869,6 +3034,7 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
 
   const accessConfig = safeJsonParse(experiment.access_control_config_json, null) || {};
   const isHosted = accessConfig?.hosted === true;
+  const isGithub = accessConfig?.source === "github";
 
   const updateEditTokenHelp = () => {
     const show = editLocation?.value === "在线"
@@ -2882,8 +3048,11 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
     if (!editLocation) return;
     const isOnline = editLocation.value === "在线";
     const isCustom = editLocation.value === "其他";
+    const usingGithub = isOnline && !!String(editGithubRepo?.value || "").trim();
     editLocationLinkField?.classList.toggle("hidden", !isOnline);
     editLocationCustomField?.classList.toggle("hidden", !isCustom);
+    editGithubRepoField?.classList.toggle("hidden", !isOnline);
+    editDownloadPolicyField?.classList.toggle("hidden", !(isOnline && (isHosted || isGithub || usingGithub)));
     editAccessControlModeField?.classList.toggle("hidden", !isOnline);
     if (!isOnline && editAccessControlMode) {
       editAccessControlMode.value = "none";
@@ -2893,19 +3062,20 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
   };
   syncEditLocationFields();
   editLocation?.addEventListener("change", syncEditLocationFields);
+  editGithubRepo?.addEventListener("input", syncEditLocationFields);
 
   if (editAccessControlMode) {
     editAccessControlMode.value = experiment.access_control_mode || "none";
     const proxyOption = Array.from(editAccessControlMode.options || []).find((opt) => opt.value === "proxy");
     if (proxyOption) {
-      proxyOption.disabled = isHosted;
-      if (isHosted && editAccessControlMode.value === "proxy") {
+      proxyOption.disabled = isHosted || isGithub;
+      if ((isHosted || isGithub) && editAccessControlMode.value === "proxy") {
         editAccessControlMode.value = "token";
       }
     }
     const tokenOption = Array.from(editAccessControlMode.options || []).find((opt) => opt.value === "token");
     if (tokenOption) {
-      tokenOption.dataset.hint = isHosted
+      tokenOption.dataset.hint = (isHosted || isGithub)
         ? "拼接令牌：系统自动注入验证与一次性访问控制。"
         : "拼接令牌：需要在实验页面 head 添加脚本校验 token。";
     }
@@ -2921,6 +3091,39 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
       input.checked = allowed.has(input.value);
     });
   }
+
+  if (isHosted && accessConfig.asset_prefix && hostedMeta) {
+    getHostedUploadSummary(accessConfig.asset_prefix)
+      .then((summary) => {
+        hostedMeta.textContent = `${summary.file_count || 0} 个文件 · ${formatBytes(summary.total_bytes || 0)}`;
+      })
+      .catch(() => {
+        hostedMeta.textContent = "统计失败";
+      });
+  }
+
+  hostedReuploadBtn?.addEventListener("click", () => {
+    hostedReuploadInput?.click();
+  });
+
+  hostedReuploadInput?.addEventListener("change", async (event) => {
+    try {
+      if (!isHosted || !accessConfig.asset_prefix) {
+        throw new Error("当前实验没有可覆盖的在线上传前缀");
+      }
+      hostedReuploadBtn.disabled = true;
+      await replaceHostedUpload(accessConfig.asset_prefix, event.target?.files, hostedReuploadStatus);
+      const summary = await getHostedUploadSummary(accessConfig.asset_prefix);
+      if (hostedMeta) hostedMeta.textContent = `${summary.file_count || 0} 个文件 · ${formatBytes(summary.total_bytes || 0)}`;
+      setStatus(adminExperimentStatus, "实验文件已覆盖上传");
+    } catch (error) {
+      if (hostedReuploadStatus) hostedReuploadStatus.textContent = error.message;
+      setStatus(adminExperimentStatus, error.message, true);
+    } finally {
+      hostedReuploadBtn.disabled = false;
+      if (hostedReuploadInput) hostedReuploadInput.value = "";
+    }
+  });
 
   if (editSlotRequirementField) {
     editSlotRequirementField.classList.toggle("hidden", experiment.schedule_required !== 1);
@@ -3037,6 +3240,7 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
         return;
       }
       const allowedDevices = getCheckedValues(panel, "allowed_devices");
+      const githubRepoValue = String(editGithubRepo?.value || "").trim();
       await apiRequest("/admin/experiment/update", {
         method: "POST",
         json: {
@@ -3053,6 +3257,8 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
           access_control_mode: editAccessControlMode?.value || "none",
           allowed_devices: allowedDevices,
           same_device_single_account: editSameDeviceSingleAccount?.checked !== false,
+          github_repo: githubRepoValue || null,
+          download_policy: editDownloadPolicy?.value || null,
         },
       });
       setStatus(adminExperimentStatus, "实验信息已保存");
@@ -3517,6 +3723,7 @@ locationSelect?.addEventListener("change", () => {
   } else {
     uploadPanelLink?.classList.add("hidden");
     uploadPanelUpload?.classList.add("hidden");
+    uploadPanelGithub?.classList.add("hidden");
   }
   const isCustom = locationSelect.value === "其他";
   locationCustomField?.classList.toggle("hidden", !isCustom);
@@ -3816,10 +4023,11 @@ adminExperimentForm?.addEventListener("submit", async (event) => {
     }
 
     const useHostedUpload = uploadState.mode === "upload";
+    const useGithubRepo = uploadState.mode === "github";
     const hasHostedUpload = uploadState.files.length > 0;
     if (location === "在线") {
       if (useHostedUpload) {
-        if (!hasHostedUpload) {
+        if (!hasHostedUpload && !uploadState.prefix) {
           setStatus(adminExperimentStatus, "请先上传实验文件夹", true);
           return;
         }
@@ -3829,6 +4037,12 @@ adminExperimentForm?.addEventListener("submit", async (event) => {
         }
         if (!uploadState.hasIndex) {
           setStatus(adminExperimentStatus, "缺少 index.html，无法发布", true);
+          return;
+        }
+      } else if (useGithubRepo) {
+        const repo = (payload.github_repo || "").trim();
+        if (!/^https:\/\/github\.com\/[^/]+\/[^/]+/i.test(repo)) {
+          setStatus(adminExperimentStatus, "请填写有效的 GitHub 仓库地址", true);
           return;
         }
       } else if (!payload.location_link) {
@@ -3841,8 +4055,8 @@ adminExperimentForm?.addEventListener("submit", async (event) => {
     const schedulePayload = scheduleRequiredValue ? buildSchedulePayload() : [];
     const allowedDevices = getCheckedValues(adminExperimentForm, "allowed_devices");
     const accessMode = location === "在线" ? (payload.access_control_mode || "none") : "none";
-    if (useHostedUpload && accessMode === "proxy") {
-      setStatus(adminExperimentStatus, "在线上传不支持代理模式", true);
+    if ((useHostedUpload || useGithubRepo) && accessMode === "proxy") {
+      setStatus(adminExperimentStatus, "在线上传/GitHub模式不支持代理模式", true);
       return;
     }
     const requestPayload = {
@@ -3850,7 +4064,7 @@ adminExperimentForm?.addEventListener("submit", async (event) => {
       name: payload.name,
       type: payload.type,
       location,
-      location_link: useHostedUpload ? "" : payload.location_link,
+      location_link: (useHostedUpload || useGithubRepo) ? "" : payload.location_link,
       description: payload.description,
       notes: payload.notes,
       duration_min: payload.duration_min,
@@ -3869,6 +4083,9 @@ adminExperimentForm?.addEventListener("submit", async (event) => {
 
     if (useHostedUpload) {
       requestPayload.hosted_prefix = uploadState.prefix;
+      requestPayload.download_policy = downloadPolicy?.value || "upload_only";
+    } else if (useGithubRepo) {
+      requestPayload.github_repo = (payload.github_repo || "").trim();
       requestPayload.download_policy = downloadPolicy?.value || "upload_only";
     }
 
@@ -3968,6 +4185,7 @@ logoutBtn.addEventListener("click", async () => {
 });
 
 initTokenScriptHelp();
+refreshAdminTabCopyHint();
 setUploadMode(uploadState.mode);
 if (locationSelect?.value !== "在线") {
   uploadTabs?.classList.add("hidden");

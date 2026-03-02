@@ -468,6 +468,12 @@ textarea:focus {
   margin-top: 2rem;
 }
 
+.admin-tab-copy-hint {
+  margin: 0 0 0.35rem 0.2rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
 .admin-tabs {
   display: flex;
   gap: 0.4rem;
@@ -1029,6 +1035,49 @@ body.is-admin .split {
 
 .upload-panel {
   grid-column: 1 / -1;
+}
+
+.submit-row {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.inline-check {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  color: var(--text);
+}
+
+.inline-check input[type="checkbox"] {
+  margin: 0;
+}
+
+.hosted-assets-card {
+  border: 1px solid rgba(58, 123, 213, 0.22);
+  border-radius: 12px;
+  background: #f8fbff;
+  padding: 0.8rem;
+}
+
+.hosted-assets-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.hosted-assets-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 #tokenScriptHelp,
