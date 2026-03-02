@@ -3952,20 +3952,10 @@ async function applyExperiment(exp, selectedSlots) {
 
 async function downloadParticipantsCsv(experimentUid) {
   const encoded = encodeURIComponent(experimentUid);
-  const endpoints = [
+  await downloadApiFile(
     `/admin/experiment/participants/export?experiment_uid=${encoded}`,
-    `/admin/experiment/participants/download?experiment_uid=${encoded}`,
-  ];
-  let lastError = null;
-  for (const endpoint of endpoints) {
-    try {
-      await downloadApiFile(endpoint, `${experimentUid}_participants.csv`);
-      return;
-    } catch (error) {
-      lastError = error;
-    }
-  }
-  throw lastError || new Error("下载失败");
+    `${experimentUid}_participants.csv`
+  );
 }
 
 tabs.forEach((tab) => {
