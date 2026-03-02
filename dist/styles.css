@@ -877,13 +877,56 @@ body.is-admin .split {
 }
 
 .admin-participant-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   gap: 1rem;
   padding: 0.4rem 0.6rem;
   background: #ffffff;
   border-radius: 10px;
+}
+
+.admin-participant-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.admin-participant-head {
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.admin-participant-time {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.participant-time-date {
+  font-weight: 700;
+}
+
+.participant-time-clock {
+  font-size: 0.86rem;
+  color: #516174;
+}
+
+.admin-participant-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
+.admin-participant-actions .ghost {
+  padding: 0.45rem 0.62rem;
+  border-radius: 10px;
+  min-height: 0;
+  line-height: 1.2;
 }
 
 .admin-participant-item.rejected {
@@ -1103,16 +1146,19 @@ body.is-admin .split {
 .inline-check {
   display: inline-flex;
   flex-direction: row;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.45rem;
+  row-gap: 0.2rem;
   margin: 0;
   color: var(--text);
-  white-space: nowrap;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
+  line-height: 1.35;
 }
 
 .inline-check input[type="checkbox"] {
   margin: 0;
+  margin-top: 0.15rem;
+  flex: 0 0 auto;
 }
 
 .hosted-assets-card {
@@ -1264,5 +1310,18 @@ body.is-admin .split {
     padding-top: 2.5rem;
     gap: 0rem;
     padding-top:0rem;
+  }
+
+  .admin-participant-item {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+
+  .admin-participant-actions {
+    justify-content: flex-start;
+  }
+
+  .admin-participant-actions .ghost {
+    padding: 0.38rem 0.52rem;
   }
 }

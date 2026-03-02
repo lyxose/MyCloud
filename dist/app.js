@@ -3227,9 +3227,8 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
             <input name="reward" id="adminEditReward" value="${experiment.reward || ""}" />
           </label>
           <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-            <label style="display:flex;align-items:center;gap:8px;margin:0;white-space:nowrap;flex-wrap:nowrap;min-width:0;">
-              <input type="checkbox" id="adminEditSameDeviceSingleAccount" ${Number(experiment.same_device_single_account ?? 1) !== 0 ? "checked" : ""} />
-              <span style="white-space:nowrap;">同一实验中，同一设备禁止切换不同账号重复报名</span>
+            <label class="inline-check" style="margin:0;">
+              <input type="checkbox" id="adminEditSameDeviceSingleAccount" ${Number(experiment.same_device_single_account ?? 1) !== 0 ? "checked" : ""} />同一实验中，同一设备禁止切换不同账号重复报名
             </label>
             <button type="button" class="primary" id="saveExperimentInfo" style="width:auto;min-width:160px;">保存实验信息</button>
           </div>
@@ -3776,17 +3775,21 @@ async function loadParticipantsForExperiment(experimentUid, list) {
       const endRaw = isScheduled
         ? (participant.slot?.end_time || "-")
         : (participant.actual_ended_at || "-");
-      const startText = formatCompactDateTime(startRaw);
-      const endText = formatCompactDateTime(endRaw);
+      const timeRangeHtml = formatParticipantTimeRangeHtml(startRaw, endRaw);
       const rejectMeta = isRejected
         ? `（已拒绝${participant.rejected_at ? `：${participant.rejected_at}` : ""}${participant.rejection_reason ? `，原因：${participant.rejection_reason}` : ""}）`
         : "";
       item.innerHTML = `
-        <span>${participant.name} (${participant.user_uid}) · ${startText} to ${endText} ${rejectMeta}</span>
-        <button type="button" class="ghost" data-action="download-user">下载数据</button>
-        <button type="button" class="ghost" data-action="reject" ${isRejected ? "disabled" : ""}>${isRejected ? "已拒绝" : "拒绝被试"}</button>
-        <button type="button" class="ghost" data-action="restore" ${isRejected ? "" : "disabled"}>恢复被试</button>
-        <button type="button" class="ghost" data-action="feedback">添加评价</button>
+        <div class="admin-participant-main">
+          <span class="admin-participant-head">${participant.name} (${participant.user_uid}) ${rejectMeta}</span>
+          <span class="admin-participant-time">${timeRangeHtml}</span>
+        </div>
+        <div class="admin-participant-actions">
+          <button type="button" class="ghost" data-action="download-user">下载数据</button>
+          <button type="button" class="ghost" data-action="reject" ${isRejected ? "disabled" : ""}>${isRejected ? "已拒绝" : "拒绝被试"}</button>
+          <button type="button" class="ghost" data-action="restore" ${isRejected ? "" : "disabled"}>恢复被试</button>
+          <button type="button" class="ghost" data-action="feedback">添加评价</button>
+        </div>
       `;
       item.querySelector("[data-action='download-user']")?.addEventListener("click", async () => {
         try {
@@ -3953,6 +3956,56 @@ function formatCompactDateTime(value) {
     .replace(/Z$/i, "")
     .replace(/\.\d+$/, "")
     .slice(0, 19);
+}
+
+function parseCompactDateTime(value) {
+  if (!value || value === "-") return null;
+  const text = formatCompactDateTime(value);
+  const matched = /^\s*(\d{4}-\d{2}-\d{2})T?(\d{2}:\d{2}:\d{2})?/.exec(text);
+  if (matched?.[1]) {
+    return {
+      date: matched[1],
+      time: matched[2] || "--:--:--",
+    };
+  }
+  const parsed = Date.parse(String(value).replace(" ", "T"));
+  if (Number.isNaN(parsed)) return null;
+  const d = new Date(parsed);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+  return {
+    date: `${y}-${m}-${day}`,
+    time: `${hh}:${mm}:${ss}`,
+  };
+}
+
+function formatParticipantTimeRangeHtml(startRaw, endRaw) {
+  const s = parseCompactDateTime(startRaw);
+  const e = parseCompactDateTime(endRaw);
+  if (!s && !e) {
+    return '<span class="participant-time-date">-</span>';
+  }
+  if (s && e) {
+    if (s.date === e.date) {
+      return `
+        <span class="participant-time-date">${s.date}</span>
+        <span class="participant-time-clock">${s.time} - ${e.time}</span>
+      `;
+    }
+    return `
+      <span class="participant-time-date">${s.date}</span>
+      <span class="participant-time-clock">${s.time} - ${e.date} ${e.time}</span>
+    `;
+  }
+  const only = s || e;
+  return `
+    <span class="participant-time-date">${only.date}</span>
+    <span class="participant-time-clock">${only.time}</span>
+  `;
 }
 
 function formatRewardWithUnit(value) {
