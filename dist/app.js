@@ -563,14 +563,11 @@ function getCheckedValues(form, name) {
 
 function getOrCreateDeviceFingerprint() {
   const parts = [
-    navigator.userAgent || "",
     navigator.platform || "",
-    navigator.language || "",
-    navigator.vendor || "",
-    String(navigator.hardwareConcurrency || ""),
-    String(navigator.deviceMemory || ""),
     `${screen.width || 0}x${screen.height || 0}`,
     String(window.devicePixelRatio || 1),
+    String(navigator.hardwareConcurrency || ""),
+    String(navigator.deviceMemory || ""),
     Intl.DateTimeFormat().resolvedOptions().timeZone || "",
     String(navigator.maxTouchPoints || 0),
   ];
@@ -700,7 +697,7 @@ function copyExperimentToNewDraft(experiment) {
     resetUploadState();
     setUploadMode("link");
   }
-  setStatus(adminExperimentStatus, `已复制「${experiment.name}」配置到新实验（排期未复制）`);
+  setStatus(adminExperimentStatus, `已复制「${experiment.name}」配置到新实验`);
 }
 
 function updateAccessControlHint(selectEl, hintEl) {
@@ -734,6 +731,28 @@ async function apiRequest(path, options = {}) {
     throw new Error(message);
   }
   return data;
+}
+
+async function downloadApiFile(path, fallbackName = "download.json") {
+  const headers = {};
+  if (state.token) headers.Authorization = `Bearer ${state.token}`;
+  const response = await fetch(`${API_BASE}${path}`, { method: "GET", headers });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "下载失败");
+    throw new Error(text || "下载失败");
+  }
+  const blob = await response.blob();
+  const contentDisposition = response.headers.get("content-disposition") || "";
+  const matched = contentDisposition.match(/filename\*=UTF-8''([^;]+)|filename="?([^\";]+)"?/i);
+  const fileName = decodeURIComponent(matched?.[1] || matched?.[2] || fallbackName);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 async function initHostedUpload() {
@@ -2853,7 +2872,8 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
   adminScheduleState.slots = [];
   adminScheduleState.selectedIds.clear();
   const detailAccessConfig = safeJsonParse(experiment.access_control_config_json, null) || {};
-  const detailIsHosted = detailAccessConfig?.hosted === true;
+  const detailSource = detailAccessConfig?.source || "";
+  const detailIsHosted = detailSource === "hosted_upload";
   const detailIsGithub = detailAccessConfig?.source === "github";
   const detailDownloadPolicy = detailAccessConfig?.download_policy || "upload_only";
   const sourceCardHtml = detailIsHosted
@@ -2864,7 +2884,7 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
           <span class="hint" id="adminHostedAssetsMeta">统计中...</span>
         </div>
         <div class="hosted-assets-actions" style="margin-top:0.6rem;">
-          <a class="ghost" id="adminHostedDownloadBtn" href="${experiment.location_link || "#"}" target="_blank" rel="noopener" download>下载 index.html</a>
+          <button type="button" class="ghost" id="adminHostedDownloadBtn">下载完整实验文件</button>
           <button type="button" class="ghost" id="adminHostedReuploadBtn">重新上传并覆盖</button>
           <input type="file" id="adminHostedReuploadInput" webkitdirectory directory multiple style="display:none;" />
         </div>
@@ -3081,6 +3101,7 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
   const editSlotRequirementField = panel.querySelector("#adminEditSlotRequirementField");
   const editReward = panel.querySelector("#adminEditReward");
   const hostedMeta = panel.querySelector("#adminHostedAssetsMeta");
+  const hostedDownloadBtn = panel.querySelector("#adminHostedDownloadBtn");
   const hostedReuploadBtn = panel.querySelector("#adminHostedReuploadBtn");
   const hostedReuploadInput = panel.querySelector("#adminHostedReuploadInput");
   const hostedReuploadStatus = panel.querySelector("#adminHostedReuploadStatus");
@@ -3098,7 +3119,7 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
   }
 
   const accessConfig = safeJsonParse(experiment.access_control_config_json, null) || {};
-  const isHosted = accessConfig?.hosted === true;
+  const isHosted = accessConfig?.source === "hosted_upload";
   const isGithub = accessConfig?.source === "github";
 
   const updateEditTokenHelp = () => {
@@ -3166,6 +3187,21 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
         hostedMeta.textContent = "统计失败";
       });
   }
+
+  hostedDownloadBtn?.addEventListener("click", async () => {
+    if (!isHosted || !accessConfig.asset_prefix) return;
+    try {
+      hostedDownloadBtn.disabled = true;
+      await downloadApiFile(
+        `/admin/experiment/upload/archive?prefix=${encodeURIComponent(accessConfig.asset_prefix)}`,
+        `${experiment.experiment_uid}_assets.json`
+      );
+    } catch (error) {
+      setStatus(adminExperimentStatus, error.message, true);
+    } finally {
+      hostedDownloadBtn.disabled = false;
+    }
+  });
 
   hostedReuploadBtn?.addEventListener("click", () => {
     hostedReuploadInput?.click();
@@ -3467,11 +3503,26 @@ function renderAdminExperimentList(experiments) {
     card.innerHTML = `
       <h4>${exp.name}</h4>
       <p class="hint">${exp.type} · ${exp.location}</p>
+      <button type="button" class="ghost" data-action="download-all">下载完整实验数据集</button>
       <button type="button" class="ghost" data-action="toggle">展开参与名单</button>
       <div class="admin-participant-list hidden"></div>
     `;
+    const downloadAllBtn = card.querySelector("[data-action='download-all']");
     const toggleBtn = card.querySelector("[data-action='toggle']");
     const list = card.querySelector(".admin-participant-list");
+    downloadAllBtn?.addEventListener("click", async () => {
+      try {
+        downloadAllBtn.disabled = true;
+        await downloadApiFile(
+          `/admin/experiment/data/download?experiment_uid=${encodeURIComponent(exp.experiment_uid)}`,
+          `${exp.experiment_uid}_dataset.json`
+        );
+      } catch (error) {
+        alert(error.message || "下载失败");
+      } finally {
+        downloadAllBtn.disabled = false;
+      }
+    });
     toggleBtn.addEventListener("click", async () => {
       list.classList.toggle("hidden");
       if (!list.classList.contains("hidden")) {
@@ -3518,8 +3569,19 @@ async function loadParticipantsForExperiment(experimentUid, list) {
       const startText = participant.slot?.start_time ? formatSlotDateTime(participant.slot.start_time) : "-";
       item.innerHTML = `
         <span>${participant.name} (${participant.user_uid}) · ${startText}</span>
+        <button type="button" class="ghost" data-action="download-user">下载该被试实验数据</button>
         <button type="button" class="ghost" data-action="feedback">添加评价</button>
       `;
+      item.querySelector("[data-action='download-user']")?.addEventListener("click", async () => {
+        try {
+          await downloadApiFile(
+            `/admin/experiment/data/download-user?experiment_uid=${encodeURIComponent(experimentUid)}&user_uid=${encodeURIComponent(participant.user_uid)}`,
+            `${experimentUid}_${participant.user_uid}_dataset.json`
+          );
+        } catch (error) {
+          alert(error.message || "下载失败");
+        }
+      });
       item.querySelector("[data-action='feedback']").addEventListener("click", async () => {
         const feedback = prompt("输入评价信息");
         if (!feedback) return;
