@@ -1541,6 +1541,8 @@ let slotNudgePrevTouchAction = "";
 
 function lockPageScrollForNudge() {
   if (slotNudgeTouchBlocker) return;
+  // 电脑端（非粗指针设备）不锁定滚动，因为不会受触摸拖动影响
+  if (!IS_COARSE_POINTER) return;
   slotNudgePrevOverflow = document.body.style.overflow || "";
   slotNudgePrevTouchAction = document.body.style.touchAction || "";
   document.body.style.overflow = "hidden";
