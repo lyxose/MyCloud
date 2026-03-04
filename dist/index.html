@@ -613,8 +613,23 @@
         <div class="card-header">
           <h2>实验与被试管理</h2>
           <button class="ghost" id="adminExperimentsRefresh">刷新列表</button>
+          <button class="ghost" id="openUnifiedSchedule">统一排期表</button>
         </div>
         <div id="adminExperimentList" class="admin-experiment-list"></div>
+      </section>
+
+      <section class="card hidden" id="adminUnifiedSchedulePanel">
+        <div class="card-header">
+          <h2>实验室排期统一表</h2>
+          <button class="ghost" id="closeUnifiedSchedule">返回</button>
+        </div>
+        <div id="unifiedScheduleContent">
+          <div class="unified-schedule-wrapper">
+            <div id="unifiedScheduleLocationTabs" class="location-tabs"></div>
+            <div id="unifiedScheduleGrid" class="schedule-grid"></div>
+            <div id="unifiedScheduleStatus" class="form-note"></div>
+          </div>
+        </div>
       </section>
 
       <section class="card consent-section" id="consent">

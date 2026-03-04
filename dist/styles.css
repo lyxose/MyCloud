@@ -998,6 +998,72 @@ body.is-admin .split {
   display: none;
 }
 
+/* ==================== 统一排期表样式 ==================== */
+.unified-schedule-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.location-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.location-tabs .mini-tab {
+  padding: 0.6rem 1rem;
+  border-radius: 8px;
+  border: 2px solid rgba(58, 123, 213, 0.2);
+  background: #ffffff;
+  color: var(--text);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.location-tabs .mini-tab:hover {
+  border-color: var(--accent);
+}
+
+.location-tabs .mini-tab.active {
+  background: var(--accent);
+  color: #ffffff;
+  border-color: var(--accent);
+}
+
+.unified-schedule-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #ffffff;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(30, 60, 100, 0.08);
+}
+
+.unified-schedule-table thead {
+  background: #eef4fb;
+  border-bottom: 2px solid rgba(58, 123, 213, 0.15);
+}
+
+.unified-schedule-table th {
+  padding: 0.8rem 1rem;
+  text-align: left;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.unified-schedule-table td {
+  padding: 0.8rem 1rem;
+  border-bottom: 1px solid rgba(58, 123, 213, 0.1);
+  color: var(--text);
+}
+
+.unified-schedule-table tbody tr:hover {
+  background: #f9fbff;
+}
+
 .slot-nudge-overlay .ghost {
   min-width: 44px;
   min-height: 40px;

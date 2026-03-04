@@ -531,6 +531,12 @@ const tokenScriptBlock = null;
 const adminExperimentsSection = document.getElementById("adminExperiments");
 const adminExperimentList = document.getElementById("adminExperimentList");
 const adminExperimentsRefresh = document.getElementById("adminExperimentsRefresh");
+const openUnifiedScheduleBtn = document.getElementById("openUnifiedSchedule");
+const closeUnifiedScheduleBtn = document.getElementById("closeUnifiedSchedule");
+const adminUnifiedSchedulePanel = document.getElementById("adminUnifiedSchedulePanel");
+const unifiedScheduleLocationTabs = document.getElementById("unifiedScheduleLocationTabs");
+const unifiedScheduleGrid = document.getElementById("unifiedScheduleGrid");
+const unifiedScheduleStatus = document.getElementById("unifiedScheduleStatus");
 
 const VIEW_START_DEFAULT = 9 * 60;
 const VIEW_END_DEFAULT = 18 * 60;
@@ -1541,7 +1547,7 @@ let slotNudgePrevTouchAction = "";
 
 function lockPageScrollForNudge() {
   if (slotNudgeTouchBlocker) return;
-  // 电脑端（非粗指针设备）不锁定滚动，因为不会受触摸拖动影响
+  // 仅在移动设备上锁定滑动，电脑端允许正常滚动
   if (!IS_COARSE_POINTER) return;
   slotNudgePrevOverflow = document.body.style.overflow || "";
   slotNudgePrevTouchAction = document.body.style.touchAction || "";
@@ -1558,8 +1564,11 @@ function unlockPageScrollForNudge() {
     document.removeEventListener("touchmove", slotNudgeTouchBlocker);
     slotNudgeTouchBlocker = null;
   }
-  document.body.style.overflow = slotNudgePrevOverflow;
-  document.body.style.touchAction = slotNudgePrevTouchAction;
+  // 仅恢复移动设备上的设置
+  if (IS_COARSE_POINTER) {
+    document.body.style.overflow = slotNudgePrevOverflow;
+    document.body.style.touchAction = slotNudgePrevTouchAction;
+  }
 }
 
 function closeSlotActionMenu() {
@@ -3059,301 +3068,7 @@ async function selectAdminTab(tabKey) {
     adminEditState.experiment = null;
     return;
   }
-  if (tabKey === "unified-schedule") {
-    initUnifiedScheduleView();
-    return;
-  }
   await loadAdminExperimentDetail(tabKey);
-}
-
-function initUnifiedScheduleView() {
-  const panel = document.getElementById("adminPanelExperiments");
-  const schedulePanel = document.getElementById("adminPanelUnifiedSchedule");
-  
-  if (!schedulePanel) return;
-  
-  if (panel) {
-    panel.classList.remove("active");
-  }
-  schedulePanel.classList.add("active");
-  
-  // Initialize unified schedule state
-  const unifiedState = window.unifiedScheduleState || {
-    labs: ["视觉注意", "认知神经", "发展心理", "社会认知"],
-    activeLab: "视觉注意",
-    weekStart: startOfWeek(new Date()),
-    dayCount: 7,
-    schedules: {}, // { "lab_name": [{ id, date, startMin, endMin, subject, admin, capacity }] }
-    profile: state.profile,
-  };
-  window.unifiedScheduleState = unifiedState;
-  
-  // Bind lab tab click handlers
-  const labTabs = schedulePanel.querySelectorAll(".lab-tabs .tab");
-  labTabs.forEach((tab) => {
-    tab.removeEventListener("click", handleLabTabClick);
-    tab.addEventListener("click", handleLabTabClick);
-  });
-  
-  function handleLabTabClick() {
-    const lab = this.dataset.lab;
-    if (lab) {
-      unifiedState.activeLab = lab;
-      renderUnifiedScheduleView(unifiedState);
-    }
-  }
-  
-  // Bind week navigation
-  const prevBtn = schedulePanel.querySelector("#unifiedSchedulePrev");
-  const nextBtn = schedulePanel.querySelector("#unifiedScheduleNext");
-  
-  prevBtn?.addEventListener("click", () => {
-    const prev = new Date(unifiedState.weekStart);
-    prev.setDate(prev.getDate() - 7);
-    unifiedState.weekStart = prev;
-    renderUnifiedScheduleView(unifiedState);
-  });
-  
-  nextBtn?.addEventListener("click", () => {
-    const next = new Date(unifiedState.weekStart);
-    next.setDate(next.getDate() + 7);
-    unifiedState.weekStart = next;
-    renderUnifiedScheduleView(unifiedState);
-  });
-  
-  // Bind add block button
-  const addBtn = schedulePanel.querySelector("#unifiedScheduleAddBlock");
-  addBtn?.addEventListener("click", () => {
-    showUnifiedScheduleModal(unifiedState);
-  });
-  
-  // Load initial schedule data and render
-  loadUnifiedScheduleData(unifiedState).then(() => {
-    renderUnifiedScheduleView(unifiedState);
-  });
-}
-
-async function loadUnifiedScheduleData(state) {
-  // Fetch schedule data for all labs
-  // This would call an API endpoint: /admin/unified-schedule/list
-  // For now, initialize with empty data structure
-  state.labs.forEach((lab) => {
-    if (!state.schedules[lab]) {
-      state.schedules[lab] = [];
-    }
-  });
-}
-
-function renderUnifiedScheduleView(state) {
-  const panel = document.getElementById("adminPanelUnifiedSchedule");
-  if (!panel) return;
-  
-  // Update active lab tab
-  const labTabs = panel.querySelectorAll(".lab-tabs .tab");
-  labTabs.forEach((tab) => {
-    tab.classList.toggle("active", tab.dataset.lab === state.activeLab);
-  });
-  
-  // Build week dates
-  const days = buildWeekDates(state.weekStart, 7);
-  const lastDay = days[days.length - 1];
-  
-  // Update title
-  const headerControls = panel.querySelector(".unified-schedule-controls");
-  const titleSpan = panel.querySelector("#unifiedScheduleWeek");
-  if (titleSpan) {
-    titleSpan.textContent = `${days[0].getMonth() + 1}/${days[0].getDate()} - ${lastDay.getMonth() + 1}/${lastDay.getDate()}`;
-  }
-  
-  // Render calendar grid
-  const calendar = panel.querySelector("#unifiedCalendar");
-  if (calendar) {
-    renderUnifiedCalendarGrid(calendar, days, state);
-  }
-}
-
-function renderUnifiedCalendarGrid(container, days, state) {
-  container.innerHTML = "";
-  
-  // Create day headers
-  const headerRow = document.createElement("div");
-  headerRow.className = "calendar-header-row";
-  
-  const timeHeader = document.createElement("div");
-  timeHeader.className = "calendar-cell time-header";
-  timeHeader.textContent = "时间";
-  headerRow.appendChild(timeHeader);
-  
-  days.forEach((day) => {
-    const dayHeader = document.createElement("div");
-    dayHeader.className = "calendar-cell day-header";
-    dayHeader.textContent = formatDateLabel(day);
-    headerRow.appendChild(dayHeader);
-  });
-  
-  container.appendChild(headerRow);
-  
-  // Create time slots
-  for (let hour = 9; hour < 18; hour++) {
-    const timeRow = document.createElement("div");
-    timeRow.className = "calendar-time-row";
-    
-    const timeCell = document.createElement("div");
-    timeCell.className = "calendar-cell time-cell";
-    timeCell.textContent = `${String(hour).padStart(2, "0")}:00`;
-    timeRow.appendChild(timeCell);
-    
-    days.forEach((day) => {
-      const slot = document.createElement("div");
-      slot.className = "calendar-cell schedule-cell";
-      slot.dataset.date = formatLocalDate(day);
-      slot.dataset.hour = hour;
-      
-      // Get blocks for this time slot from active lab
-      const blocks = state.schedules[state.activeLab] || [];
-      const dayBlocks = blocks.filter((b) => {
-        const blockDate = new Date(`${b.date}T00:00:00`);
-        return formatLocalDate(blockDate) === formatLocalDate(day) 
-          && Math.floor(b.startMin / 60) === hour;
-      });
-      
-      if (dayBlocks.length > 0) {
-        const blockEl = document.createElement("div");
-        blockEl.className = "schedule-block";
-        
-        dayBlocks.forEach((block) => {
-          const adminColor = getAdminColor(block.adminIndex || 0);
-          const blockDiv = document.createElement("div");
-          blockDiv.className = `schedule-block-content ${adminColor}`;
-          blockDiv.innerHTML = `
-            <div class="block-time">${formatMinutes(block.startMin)} - ${formatMinutes(block.endMin)}</div>
-            <div class="block-subject">${block.subject || "-"}</div>
-            <div class="block-admin">${block.admin || "未分配"}</div>
-          `;
-          blockDiv.style.cursor = "pointer";
-          blockDiv.addEventListener("click", () => {
-            showUnifiedBlockDetail(block, state);
-          });
-          blockEl.appendChild(blockDiv);
-        });
-        
-        slot.appendChild(blockEl);
-      } else {
-        // Empty slot button
-        const addBtn = document.createElement("button");
-        addBtn.type = "button";
-        addBtn.className = "ghost empty-slot-btn";
-        addBtn.textContent = "+ 添加";
-        addBtn.addEventListener("click", () => {
-          showUnifiedScheduleModal(state, day, hour);
-        });
-        slot.appendChild(addBtn);
-      }
-      
-      timeRow.appendChild(slot);
-    });
-    
-    container.appendChild(timeRow);
-  }
-}
-
-function getAdminColor(index) {
-  const colors = ["admin-a", "admin-b", "admin-c", "admin-d"];
-  return colors[index % colors.length];
-}
-
-function showUnifiedScheduleModal(state, day, hour) {
-  const modal = document.getElementById("unifiedScheduleModal");
-  if (!modal) return;
-  
-  // Set default values
-  const dateInput = modal.querySelector("input[name='date']");
-  const startTimeInput = modal.querySelector("input[name='start_time']");
-  const endTimeInput = modal.querySelector("input[name='end_time']");
-  const subjectInput = modal.querySelector("input[name='subject']");
-  
-  if (dateInput && day) {
-    dateInput.value = formatLocalDate(day);
-  }
-  if (startTimeInput && hour !== undefined) {
-    startTimeInput.value = `${String(hour).padStart(2, "0")}:00`;
-  }
-  if (endTimeInput && hour !== undefined) {
-    endTimeInput.value = `${String(hour + 1).padStart(2, "0")}:00`;
-  }
-  
-  // Show modal
-  modal.classList.remove("hidden");
-  
-  // Bind save button
-  const saveBtn = modal.querySelector("[data-action='save']");
-  const closeBtn = modal.querySelector("[data-action='close']");
-  const modalOverlay = modal.querySelector(".modal-overlay");
-  
-  const closeModal = () => {
-    modal.classList.add("hidden");
-  };
-  
-  closeBtn?.addEventListener("click", closeModal, { once: true });
-  modalOverlay?.addEventListener("click", closeModal, { once: true });
-  
-  saveBtn?.addEventListener("click", async (e) => {
-    e.preventDefault();
-    try {
-      const formData = {
-        lab: state.activeLab,
-        date: dateInput?.value,
-        start_time: startTimeInput?.value,
-        end_time: endTimeInput?.value,
-        subject: subjectInput?.value || "",
-        admin: state.profile?.name || "",
-        capacity: parseInt(modal.querySelector("input[name='capacity']")?.value || "1", 10),
-      };
-      
-      // Save to state or API
-      const timeMatch = /^(\d{2}):(\d{2})$/.exec(formData.start_time);
-      if (timeMatch) {
-        const startMin = parseInt(timeMatch[1], 10) * 60 + parseInt(timeMatch[2], 10);
-        const endMatch = /^(\d{2}):(\d{2})$/.exec(formData.end_time);
-        const endMin = endMatch 
-          ? parseInt(endMatch[1], 10) * 60 + parseInt(endMatch[2], 10)
-          : startMin + 60;
-        
-        const block = {
-          id: `block_${Date.now()}`,
-          date: formData.date,
-          startMin,
-          endMin,
-          subject: formData.subject,
-          admin: formData.admin,
-          adminIndex: getAdminIndex(formData.admin, state),
-          capacity: formData.capacity,
-        };
-        
-        if (!state.schedules[state.activeLab]) {
-          state.schedules[state.activeLab] = [];
-        }
-        state.schedules[state.activeLab].push(block);
-        
-        setStatus(adminExperimentStatus, "时间块已添加");
-        closeModal();
-        renderUnifiedScheduleView(state);
-      }
-    } catch (error) {
-      setStatus(adminExperimentStatus, error.message, true);
-    }
-  }, { once: true });
-}
-
-function showUnifiedBlockDetail(block, state) {
-  // Show detail modal or edit dialog
-  const modal = window.confirm(`编辑时间块?\n\n${block.date} ${formatMinutes(block.startMin)}-${formatMinutes(block.endMin)}\n被试: ${block.subject}\n主试: ${block.admin}`);
-}
-
-function getAdminIndex(adminName, state) {
-  // This would map admin names to colors
-  // For now, return a fixed index
-  return 0;
 }
 
 async function loadAdminExperimentDetail(experimentUid) {
@@ -4069,6 +3784,7 @@ async function loadParticipantsForExperiment(experimentUid, list) {
     });
     const participants = [];
     const isScheduled = Number(data?.experiment?.schedule_required || 0) === 1;
+    const isAccessControlledWithToken = data?.experiment?.access_control_mode === "token" && data?.experiment?.location === "在线";
     (data.slots || []).forEach((slot) => {
       const slotParticipants = JSON.parse(slot.participants_json || "[]");
       slotParticipants.forEach((p) => participants.push({ ...p, slot }));
@@ -4093,6 +3809,9 @@ async function loadParticipantsForExperiment(experimentUid, list) {
       const rejectMeta = isRejected
         ? `（已拒绝${participant.rejected_at ? `：${participant.rejected_at}` : ""}${participant.rejection_reason ? `，原因：${participant.rejection_reason}` : ""}）`
         : "";
+      const tokenRecoveryButton = isAccessControlledWithToken
+        ? `<button type="button" class="ghost" data-action="recover-token" ${isRejected ? "disabled" : ""}>恢复报名链接</button>`
+        : "";
       item.innerHTML = `
         <div class="admin-participant-main">
           <span class="admin-participant-head">${participant.name} (${participant.user_uid}) ${rejectMeta}</span>
@@ -4103,6 +3822,7 @@ async function loadParticipantsForExperiment(experimentUid, list) {
           <button type="button" class="ghost" data-action="reject" ${isRejected ? "disabled" : ""}>${isRejected ? "已拒绝" : "拒绝被试"}</button>
           <button type="button" class="ghost" data-action="restore" ${isRejected ? "" : "disabled"}>恢复被试</button>
           <button type="button" class="ghost" data-action="feedback">添加评价</button>
+          ${tokenRecoveryButton}
         </div>
       `;
       item.querySelector("[data-action='download-user']")?.addEventListener("click", async () => {
@@ -4159,11 +3879,153 @@ async function loadParticipantsForExperiment(experimentUid, list) {
           alert(error.message || "恢复失败");
         }
       });
+      item.querySelector("[data-action='recover-token']")?.addEventListener("click", async () => {
+        const ok = window.confirm(`确认恢复 ${participant.name}（${participant.user_uid}）的报名链接访问权限？\n恢复后该被试可重新访问实验链接一次。`);
+        if (!ok) return;
+        try {
+          await apiRequest("/admin/experiment/participant/recover-token", {
+            method: "POST",
+            json: {
+              experiment_uid: experimentUid,
+              user_uid: participant.user_uid,
+              slot_id: participant.slot?.id,
+            },
+          });
+          setStatus(adminExperimentStatus, `已恢复 ${participant.name} 的报名链接访问权限`);
+          await loadParticipantsForExperiment(experimentUid, list);
+        } catch (error) {
+          alert(error.message || "恢复链接失败");
+        }
+      });
       list.appendChild(item);
     });
   } catch (error) {
     list.textContent = error.message;
   }
+}
+
+// ==================== 统一排期管理 ====================
+const unifiedScheduleState = {
+  locations: [],
+  currentLocation: '',
+  schedules: {},
+  researchers:  new Map(),
+};
+
+async function loadUnifiedSchedules() {
+  if (!(state.role === "admin" || state.role === "root")) return;
+  setStatus(unifiedScheduleStatus, "正在加载统一排期表...", false);
+  try {
+    const data = await apiRequest("/admin/experiments", { method: "GET" });
+    const experiments = data.experiments || [];
+    
+    // 提取所有唯一的地点
+    const locationSet = new Set();
+    const schedulesByLocation = {};
+    
+    experiments.forEach((exp) => {
+      const location = exp.location || "在线";
+      if (!locationSet.has(location)) {
+        locationSet.add(location);
+        schedulesByLocation[location] = [];
+      }
+      
+      // 收集该地点的所有排期
+      if (exp.schedule_required && exp.slots && Array.isArray(exp.slots)) {
+        exp.slots.forEach((slot) => {
+          schedulesByLocation[location].push({
+            location,
+            experiment_name: exp.name,
+            experiment_uid: exp.experiment_uid,
+            slot_id: slot.id,
+            start_time: slot.start_time,
+            end_time: slot.end_time,
+            capacity: slot.capacity,
+            participants: parseSlotParticipants(slot),
+            contact_phone: exp.contact_phone,
+            researcher_uid: exp.researcher_uid || state.profile?.user_uid,
+            researcher_name: exp.researcher_name || state.profile?.name || "未知",
+          });
+        });
+      }
+    });
+    
+    unifiedScheduleState.locations = Array.from(locationSet).sort();
+    unifiedScheduleState.schedules = schedulesByLocation;
+    
+    if (!unifiedScheduleState.locations.length) {
+      setStatus(unifiedScheduleStatus, "暂无排期数据", false);
+      return;
+    }
+    
+    unifiedScheduleState.currentLocation = unifiedScheduleState.locations[0];
+    renderUnifiedScheduleLocationTabs();
+    renderUnifiedScheduleGrid();
+    setStatus(unifiedScheduleStatus, "已加载统一排期表", false);
+  } catch (error) {
+    setStatus(unifiedScheduleStatus, error.message, true);
+  }
+}
+
+function renderUnifiedScheduleLocationTabs() {
+  if (!unifiedScheduleLocationTabs) return;
+  unifiedScheduleLocationTabs.innerHTML = "";
+  
+  unifiedScheduleState.locations.forEach((location) => {
+    const tab = document.createElement("button");
+    tab.type = "button";
+    tab.className = "mini-tab";
+    tab.textContent = location;
+    tab.classList.toggle("active", location === unifiedScheduleState.currentLocation);
+    tab.addEventListener("click", () => {
+      unifiedScheduleState.currentLocation = location;
+      renderUnifiedScheduleLocationTabs();
+      renderUnifiedScheduleGrid();
+    });
+    unifiedScheduleLocationTabs.appendChild(tab);
+  });
+}
+
+function renderUnifiedScheduleGrid() {
+  if (!unifiedScheduleGrid) return;
+  unifiedScheduleGrid.innerHTML = "";
+  
+  const location = unifiedScheduleState.currentLocation;
+  const schedules = unifiedScheduleState.schedules[location] || [];
+  
+  if (!schedules.length) {
+    unifiedScheduleGrid.textContent = `暂无${location}的排期数据`;
+    return;
+  }
+  
+  // 简化版本：以表格形式显示排期
+  const table = document.createElement("table");
+  table.className = "unified-schedule-table";
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th>实验名称</th>
+        <th>开始时间</th>
+        <th>结束时间</th>
+        <th>主试</th>
+        <th>已报名</th>
+        <th>容量</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${schedules.map((s) => `
+        <tr>
+          <td>${s.experiment_name}</td>
+          <td>${s.start_time ? new Date(s.start_time).toLocaleString() : "-"}</td>
+          <td>${s.end_time ? new Date(s.end_time).toLocaleString() : "-"}</td>
+          <td>${s.researcher_name}</td>
+          <td>${s.participants?.length || 0}</td>
+          <td>${s.capacity || "-"}</td>
+        </tr>
+      `).join("")}
+    </tbody>
+  `;
+  unifiedScheduleGrid.appendChild(table);
 }
 
 async function showExperimentDetail(exp) {
@@ -4479,6 +4341,17 @@ document.addEventListener("click", (event) => {
 
 adminExperimentsRefresh?.addEventListener("click", async () => {
   await loadAdminExperimentList();
+});
+
+openUnifiedScheduleBtn?.addEventListener("click", async () => {
+  adminExperimentsSection?.classList.add("hidden");
+  adminUnifiedSchedulePanel?.classList.remove("hidden");
+  await loadUnifiedSchedules();
+});
+
+closeUnifiedScheduleBtn?.addEventListener("click", () => {
+  adminUnifiedSchedulePanel?.classList.add("hidden");
+  adminExperimentsSection?.classList.remove("hidden");
 });
 
 uploadZone?.addEventListener("click", () => {
