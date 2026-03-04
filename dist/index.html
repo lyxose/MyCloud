@@ -342,6 +342,7 @@
             <div id="adminTabCopyHint" class="admin-tab-copy-hint"></div>
             <div class="admin-tabs" id="adminTabs">
               <button class="tab active" data-admin-tab="new">新实验</button>
+              <button class="tab" data-admin-tab="unified-schedule">统一排期表</button>
             </div>
             <div class="admin-panel active" id="adminPanelNew">
               <div class="admin-layout">
@@ -533,6 +534,77 @@
               </div>
             </div>
             <div class="admin-panel" id="adminPanelExperiments"></div>
+            
+            <!-- 统一排期表面板 -->
+            <div class="admin-panel" id="adminPanelUnifiedSchedule">
+              <div class="unified-schedule-container">
+                <div class="unified-schedule-header">
+                  <h3>跨实验室统一排期表</h3>
+                  <div class="unified-schedule-controls">
+                    <button type="button" class="ghost" id="unifiedSchedulePrev">◀ 上周</button>
+                    <span id="unifiedScheduleWeek"></span>
+                    <button type="button" class="ghost" id="unifiedScheduleNext">下周 ▶</button>
+                    <button type="button" class="primary" id="unifiedScheduleAddBlock">+ 添加时间块</button>
+                  </div>
+                </div>
+                
+                <!-- 实验室标签页 -->
+                <div class="lab-tabs" id="labTabs">
+                  <button class="tab active" data-lab="视觉注意">视觉注意</button>
+                  <button class="tab" data-lab="认知神经">认知神经</button>
+                  <button class="tab" data-lab="发展心理">发展心理</button>
+                  <button class="tab" data-lab="社会认知">社会认知</button>
+                </div>
+                
+                <!-- 周视图日历 -->
+                <div class="unified-calendar" id="unifiedCalendar">
+                  <!-- 将由JavaScript动态生成 -->
+                </div>
+                
+                <!-- 颜色图例 -->
+                <div class="admin-legend">
+                  <strong>主试颜色图例：</strong>
+                  <span class="legend-item"><span class="color-box" style="background:#3498db;"></span>主试A</span>
+                  <span class="legend-item"><span class="color-box" style="background:#e74c3c;"></span>主试B</span>
+                  <span class="legend-item"><span class="color-box" style="background:#2ecc71;"></span>主试C</span>
+                  <span class="legend-item"><span class="color-box" style="background:#f39c12;"></span>主试D</span>
+                </div>
+              </div>
+            </div>
+            
+            <!-- 统一排期表 - 添加时间块模态框 -->
+            <div class="schedule-editor-modal hidden" id="unifiedScheduleModal">
+              <div class="modal-overlay"></div>
+              <div class="modal-content">
+                <h3>添加时间块</h3>
+                <form>
+                  <label>
+                    日期
+                    <input type="date" name="date" required />
+                  </label>
+                  <label>
+                    开始时间
+                    <input type="time" name="start_time" required />
+                  </label>
+                  <label>
+                    结束时间
+                    <input type="time" name="end_time" required />
+                  </label>
+                  <label>
+                    被试名字
+                    <input type="text" name="subject" placeholder="可选" />
+                  </label>
+                  <label>
+                    名额（人）
+                    <input type="number" name="capacity" value="1" min="1" />
+                  </label>
+                  <div class="modal-actions">
+                    <button type="button" class="ghost" data-action="close">取消</button>
+                    <button type="button" class="primary" data-action="save">添加时间块</button>
+                  </div>
+                </form>
+              </div>
+            </div>
           </div>
         </div>
       </section>
