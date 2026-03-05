@@ -1099,7 +1099,7 @@ body.is-admin .split {
 @media (min-width: 900px) {
   .split {
     grid-template-columns: minmax(320px, 1.2fr) minmax(280px, 0.9fr);
-    grid-template-rows: repeat(2, minmax(0, 1fr));
+    grid-template-rows: minmax(0, 1.3fr) minmax(0, 1fr);
     grid-template-areas:
       "profile experiment"
       "profile applied";
@@ -1171,6 +1171,19 @@ body.is-admin .split {
 .experiment-card .notice {
   font-weight: 600;
   color: #1f3b6e;
+}
+
+.experiment-meta-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.experiment-meta-right {
+  margin-left: auto;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .note-input {

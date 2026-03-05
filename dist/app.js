@@ -2821,6 +2821,7 @@ function renderExperiments() {
         : exp.eligibility?.reason || "暂不可报名";
     const missingProfilePrompt = isDisabledForMissing ? formatMissingProfilePrompt(exp.eligibility) : "";
     const rewardText = formatRewardWithUnit(exp.reward);
+    const durationText = formatDurationWithUnit(exp.duration_min);
     const deviceHint = exp.device_restriction_hint || "";
     const noticeText = exp.notes ? `注意：${exp.notes}` : "";
     const slotHint = exp.schedule_required
@@ -2836,7 +2837,7 @@ function renderExperiments() {
       </div>
       <div class="experiment-card-body">
         <p>${exp.description || "暂无简介"}</p>
-        <p class="hint">${rewardText}</p>
+        <p class="hint experiment-meta-line"><span>${rewardText}</span><span class="experiment-meta-right">${durationText}</span></p>
         ${deviceHint ? `<p class="notice">⚠️ ${deviceHint}</p>` : ""}
         ${noticeText ? `<p class="notice">${noticeText}</p>` : ""}
         ${slotHint ? `<p class="hint">${slotHint}</p>` : ""}
@@ -2909,6 +2910,7 @@ function renderAppliedExperiments() {
       type: exp?.type || record?.experiment_type || "-",
       location: exp?.location || "",
       reward: exp?.reward || "",
+      durationMin: exp?.duration_min || "",
       contact: exp?.contact_phone || "",
       notes: exp?.notes || "",
       deviceHint: exp?.device_restriction_hint || "",
@@ -2928,6 +2930,7 @@ function renderAppliedExperiments() {
     const contact = item.contact ? `主试联系方式：${item.contact}` : "主试联系方式：-";
     const notice = item.notes ? `${item.notes}` : "";
     const reward = formatRewardWithUnit(item.reward);
+    const duration = formatDurationWithUnit(item.durationMin);
     const deviceNotice = item.deviceHint ? `⚠️ ${item.deviceHint}` : "";
     const hasOnlineLink = item.location === "在线";
     card.innerHTML = `
@@ -2937,7 +2940,7 @@ function renderAppliedExperiments() {
       </div>
       <div class="experiment-card-body">
         <p class="hint">预约时间：${item.slotLabel}</p>
-        <p class="hint">${reward}</p>
+        <p class="hint experiment-meta-line"><span>${reward}</span><span class="experiment-meta-right">${duration}</span></p>
         ${deviceNotice ? `<p class="notice">${deviceNotice}</p>` : ""}
         ${notice ? `<p class="notice">${notice}</p>` : ""}
         <p class="hint">${contact}</p>
@@ -4188,6 +4191,16 @@ function formatRewardWithUnit(value) {
   const text = String(value ?? "").trim();
   if (!text) return "报酬：约-";
   return /元\s*$/u.test(text) ? `报酬：约${text}` : `报酬：约${text}元`;
+}
+
+function formatDurationWithUnit(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return "预计时长：-";
+  const numeric = Number(text);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return `预计时长：${Math.round(numeric)}分钟`;
+  }
+  return /分钟\s*$/u.test(text) ? `预计时长：${text}` : `预计时长：${text}分钟`;
 }
 
 async function applyExperiment(exp, selectedSlots) {
