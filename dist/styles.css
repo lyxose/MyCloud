@@ -617,6 +617,25 @@ textarea:disabled {
   border-radius: 6px;
 }
 
+.register-highlight {
+  background: #fff7e9;
+  border: 1px solid rgba(233, 157, 42, 0.35);
+  border-left: 4px solid #e99d2a;
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+  margin-bottom: 1rem;
+  color: var(--text);
+}
+
+.register-highlight p {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.register-highlight p + p {
+  margin-top: 0.55rem;
+}
+
 .schedule-editor {
   grid-column: 1 / -1;
   background: #f5f9ff;
