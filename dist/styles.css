@@ -1051,6 +1051,13 @@ body.is-admin .split {
   border-color: var(--accent);
 }
 
+#scheduleTitle,
+#adminEditScheduleTitle,
+#unifiedScheduleTitle {
+  cursor: pointer;
+  user-select: none;
+}
+
 .unified-schedule-table {
   width: 100%;
   border-collapse: collapse;
