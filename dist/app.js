@@ -2196,6 +2196,7 @@ const adminScheduleState = {
   weekStart: startOfWeek(new Date()),
   slots: [],
   selectedIds: new Set(),
+  activeSlotIds: new Set(),
   activeDayIndex: 0,
   dayCount: 7,
   autoStart: true,
@@ -2334,17 +2335,33 @@ function renderAdminEditScheduleGrid() {
         if (adminScheduleState.selectedIds.has(slot.id)) {
           slotEl.classList.add("selected");
         }
+        if (adminScheduleState.activeSlotIds.has(slot.id)) {
+          slotEl.classList.add("active-slot");
+        }
         slotEl.style.top = `${slot.startMin * PX_PER_MIN}px`;
         slotEl.style.height = `${(slot.endMin - slot.startMin) * PX_PER_MIN}px`;
         slotEl.dataset.id = slot.id;
         if (slot.locked) {
-          const names = (slot.participants || []).map((p) => p.name).join("、") || "已预约";
+          let displayText;
+          if (slot.sourceType) {
+            // Cross-experiment or unified manual block
+            if (slot.sourceType === "unified_manual") {
+              displayText = "统一排期";
+            } else if (slot.experimentName) {
+              displayText = slot.experimentName;
+            } else {
+              displayText = "其他实验";
+            }
+          } else {
+            // Regular locked slot with participants
+            displayText = (slot.participants || []).map((p) => p.name).join("、") || "已预约";
+          }
           slotEl.innerHTML = `
             <div class="slot-time">
               <span class="slot-time-start">${formatMinutes(slot.startMin)}</span>
               <span class="slot-time-end">${formatMinutes(slot.endMin)}</span>
             </div>
-            <div class="slot-count">${names}</div>
+            <div class="slot-count">${displayText}</div>
           `;
         } else {
           slotEl.innerHTML = `
@@ -2413,12 +2430,15 @@ function renderAdminEditScheduleGrid() {
         if (!slot.locked) {
           const confirmSavedEditStart = (event) => {
             const isPersisted = String(slot.id || "").startsWith("existing_") || Number.isFinite(Number(slot.originalId));
-            if (!isPersisted) return;
+            if (!isPersisted || adminScheduleState.activeSlotIds.has(slot.id)) return;
             const ok = window.confirm("确认开始修改该已保存预约时间块？");
             if (!ok) {
               event.preventDefault();
-              event.stopImmediatePropagation();
+              event.stopPropagation();
+              return false;
             }
+            adminScheduleState.activeSlotIds.add(slot.id);
+            renderAdminEditScheduleGrid();
           };
           slotEl.addEventListener("mousedown", confirmSavedEditStart, true);
           slotEl.addEventListener("touchstart", confirmSavedEditStart, { passive: false, capture: true });
@@ -2442,15 +2462,18 @@ function addAdminScheduleSlot({ date, startMin, endMin, capacity }) {
   );
   if (existing) {
     existing.capacity += capacity || 1;
+    adminScheduleState.activeSlotIds.add(existing.id);
     return;
   }
+  const newId = `slot_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   adminScheduleState.slots.push({
-    id: `slot_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+    id: newId,
     date: dateKey,
     startMin,
     endMin,
     capacity: capacity || 1,
   });
+  adminScheduleState.activeSlotIds.add(newId);
 }
 
 function toggleAdminSlotSelection(id) {
@@ -2537,15 +2560,17 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
 }
 
 function buildAdminSchedulePayload() {
-  return adminScheduleState.slots.map((slot) => {
-    const start = new Date(`${slot.date}T${formatMinutes(slot.startMin)}:00`);
-    const end = new Date(`${slot.date}T${formatMinutes(slot.endMin)}:00`);
-    return {
-      start_time: start.toISOString(),
-      end_time: end.toISOString(),
-      capacity: slot.capacity,
-    };
-  });
+  return adminScheduleState.slots
+    .filter(slot => !slot.locked) // Exclude locked slots (cross-experiment and manual blocks)
+    .map((slot) => {
+      const start = new Date(`${slot.date}T${formatMinutes(slot.startMin)}:00`);
+      const end = new Date(`${slot.date}T${formatMinutes(slot.endMin)}:00`);
+      return {
+        start_time: start.toISOString(),
+        end_time: end.toISOString(),
+        capacity: slot.capacity,
+      };
+    });
 }
 
 function parseSlotParticipants(slot) {
@@ -2569,6 +2594,26 @@ function convertSlotToSchedule(slot) {
     capacity: slot.capacity || 1,
     locked: slot.locked === 1,
     participants: parseSlotParticipants(slot),
+  };
+}
+
+function convertCrossSlotToSchedule(crossSlot) {
+  if (!crossSlot.start_time || !crossSlot.end_time) return null;
+  const start = new Date(crossSlot.start_time);
+  const end = new Date(crossSlot.end_time);
+  return {
+    id: crossSlot.id, // Already has "cross_exp:" or "cross_manual:" prefix
+    originalId: null, // Cannot edit cross slots
+    date: formatLocalDate(start),
+    startMin: start.getHours() * 60 + start.getMinutes(),
+    endMin: end.getHours() * 60 + end.getMinutes(),
+    capacity: crossSlot.capacity || 1,
+    locked: true, // Cross slots are always locked
+    participants: parseSlotParticipants(crossSlot),
+    sourceType: crossSlot.source_type,
+    ownerName: crossSlot.owner_name,
+    experimentName: crossSlot.experiment_name,
+    subjectName: crossSlot.subject_name,
   };
 }
 
@@ -3115,18 +3160,19 @@ async function loadAdminExperimentDetail(experimentUid) {
     const data = await apiRequest(`/admin/experiment?experiment_uid=${encodeURIComponent(experimentUid)}`, {
       method: "GET",
     });
-    renderAdminExperimentDetail(data.experiment, data.slots || [], data.participants || {});
+    renderAdminExperimentDetail(data.experiment, data.slots || [], data.cross_slots || [], data.participants || {});
   } catch (error) {
     setStatus(adminExperimentStatus, error.message, true);
   }
 }
 
-function renderAdminExperimentDetail(experiment, slots, participants) {
+function renderAdminExperimentDetail(experiment, slots, crossSlots, participants) {
   const panel = document.getElementById("adminPanelExperiments");
   if (!panel) return;
   panel.classList.add("active");
   adminEditState.experiment = experiment;
   adminEditState.slots = slots;
+  adminEditState.crossSlots = crossSlots || [];
   adminEditState.participants = participants || {};
   adminScheduleState.weekStart = startOfWeek(new Date());
   adminScheduleState.activeDayIndex = 0;
@@ -3519,14 +3565,17 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
   });
 
   const loadScheduleFromSlots = (sourceSlots) => {
-    const allSlots = sourceSlots
+    const currentSlots = sourceSlots
       .map(convertSlotToSchedule)
       .filter(Boolean);
-    adminScheduleState.slots = allSlots;
+    const crossSlots = (adminEditState.crossSlots || [])
+      .map(convertCrossSlotToSchedule)
+      .filter(Boolean);
+    adminScheduleState.slots = [...currentSlots, ...crossSlots];
     adminScheduleState.selectedIds.clear();
-    if (allSlots.length > 0) {
+    if (adminScheduleState.slots.length > 0) {
       adminScheduleState.weekStart = normalizeStartDate(
-        new Date(`${allSlots[0].date}T00:00:00`),
+        new Date(`${adminScheduleState.slots[0].date}T00:00:00`),
         adminScheduleState.dayCount
       );
       adminScheduleState.autoStart = false;
@@ -3564,7 +3613,8 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
       return;
     }
     const dayKey = formatLocalDate(date);
-    adminScheduleState.slots = adminScheduleState.slots.filter((slot) => slot.date !== dayKey);
+    // Keep locked slots (cross-experiment and unified blocks) when filling
+    adminScheduleState.slots = adminScheduleState.slots.filter((slot) => slot.date !== dayKey || slot.locked);
     let cursor = 9 * 60;
     while (cursor + durationMin <= 22 * 60) {
       addAdminScheduleSlot({ date, startMin: cursor, endMin: cursor + durationMin, capacity: 1 });
@@ -3622,6 +3672,8 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
   });
 
   deleteBtn?.addEventListener("click", async () => {
+    const confirmMsg = "确认删除此实验？\n\n注意：删除后，该实验将在任何地方都不可见，但数据库后台仍存储已有数据、实验ID仍然占用，且无法恢复成招募状态。\n\n是否继续删除？";
+    if (!window.confirm(confirmMsg)) return;
     try {
       await apiRequest("/admin/experiment/delete", {
         method: "POST",
@@ -3694,6 +3746,7 @@ function renderAdminExperimentDetail(experiment, slots, participants) {
         },
       });
       setStatus(adminExperimentStatus, "排期已保存");
+      adminScheduleState.activeSlotIds.clear();
       await loadAdminExperimentDetail(experiment.experiment_uid);
     } catch (error) {
       setStatus(adminExperimentStatus, error.message, true);
@@ -3872,6 +3925,9 @@ async function loadParticipantsForExperiment(experimentUid, list) {
       const tokenRecoveryButton = isAccessControlledWithToken
         ? `<button type="button" class="ghost" data-action="recover-token" ${isRejected ? "disabled" : ""}>恢复报名链接</button>`
         : "";
+      const rejectOrRestoreButton = isRejected
+        ? `<button type="button" class="ghost" data-action="restore">恢复被试</button>`
+        : `<button type="button" class="ghost" data-action="reject">拒绝被试</button>`;
       item.innerHTML = `
         <div class="admin-participant-main">
           <span class="admin-participant-head">${participant.name} (${participant.user_uid}) ${rejectMeta}</span>
@@ -3879,8 +3935,7 @@ async function loadParticipantsForExperiment(experimentUid, list) {
         </div>
         <div class="admin-participant-actions">
           <button type="button" class="ghost" data-action="download-user">下载数据</button>
-          <button type="button" class="ghost" data-action="reject" ${isRejected ? "disabled" : ""}>${isRejected ? "已拒绝" : "拒绝被试"}</button>
-          <button type="button" class="ghost" data-action="restore" ${isRejected ? "" : "disabled"}>恢复被试</button>
+          ${rejectOrRestoreButton}
           <button type="button" class="ghost" data-action="feedback">添加评价</button>
           ${tokenRecoveryButton}
         </div>
@@ -3971,6 +4026,7 @@ const unifiedScheduleState = {
   slots: [],
   initialSlots: [],
   selectedIds: new Set(),
+  activeSlotIds: new Set(),
   weekStart: startOfWeek(new Date()),
   activeDayIndex: 0,
   dayCount: 7,
@@ -3984,14 +4040,11 @@ const unifiedScheduleState = {
 
 function colorByOwner(userUid) {
   const safe = String(userUid || "unknown");
-  if (unifiedScheduleState.ownerColors.has(safe)) {
-    return unifiedScheduleState.ownerColors.get(safe);
+  const currentUserUid = String(state.profile?.user_uid || "");
+  if (safe === currentUserUid) {
+    return "rgba(58, 123, 213, 0.35)";
   }
-  const palette = ["#3a7bd5", "#8a63d2", "#2f9e8f", "#d4793a", "#c3579b", "#4f83cc", "#8f6cd1", "#3e9f6e"];
-  const hash = safe.split("").reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
-  const color = palette[Math.abs(hash) % palette.length];
-  unifiedScheduleState.ownerColors.set(safe, color);
-  return color;
+  return "rgba(140, 150, 170, 0.3)";
 }
 
 function toUnifiedSlot(block) {
@@ -4181,6 +4234,29 @@ function renderUnifiedScheduleGrid() {
 
     applyViewWindow(body, timeline, unifiedScheduleState);
 
+    const now = new Date();
+    if (date.toDateString() === now.toDateString()) {
+      const minutes = now.getHours() * 60 + now.getMinutes();
+      const nowLine = document.createElement("div");
+      nowLine.className = "schedule-now";
+      nowLine.style.top = `${minutes * PX_PER_MIN}px`;
+      timeline.appendChild(nowLine);
+
+      const past = document.createElement("div");
+      past.className = "schedule-past";
+      past.style.top = "0px";
+      past.style.height = `${minutes * PX_PER_MIN}px`;
+      timeline.appendChild(past);
+    }
+
+    if (isDateBeforeToday(date)) {
+      const past = document.createElement("div");
+      past.className = "schedule-past";
+      past.style.top = "0px";
+      past.style.height = "100%";
+      timeline.appendChild(past);
+    }
+
     timeline.addEventListener("click", (event) => {
       if (event.target.classList.contains("schedule-slot")) return;
       if (isDateBeforeToday(date)) return;
@@ -4191,8 +4267,9 @@ function renderUnifiedScheduleGrid() {
       const offsetY = event.clientY - rect.top + getViewOffsetPx(unifiedScheduleState);
       const startMin = Math.max(0, Math.round(offsetY / PX_PER_MIN / 10) * 10);
       const endMin = Math.min(1440, startMin + durationMin);
+      const newId = `tmp_${Date.now()}_${Math.random().toString(16).slice(2)}`;
       unifiedScheduleState.slots.push({
-        id: `tmp_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+        id: newId,
         persisted: false,
         source_type: "manual",
         location: currentLocation,
@@ -4204,6 +4281,7 @@ function renderUnifiedScheduleGrid() {
         owner_name: state.profile?.name || "",
         can_edit: true,
       });
+      unifiedScheduleState.activeSlotIds.add(newId);
       unifiedScheduleState.dirty = true;
       renderUnifiedScheduleGrid();
     }, { passive: true });
@@ -4215,6 +4293,7 @@ function renderUnifiedScheduleGrid() {
         slotEl.className = "schedule-slot";
         if (!slot.can_edit) slotEl.classList.add("locked");
         if (unifiedScheduleState.selectedIds.has(slot.id)) slotEl.classList.add("selected");
+        if (unifiedScheduleState.activeSlotIds.has(slot.id)) slotEl.classList.add("active-slot");
         slotEl.style.top = `${slot.startMin * PX_PER_MIN}px`;
         slotEl.style.height = `${Math.max(10, (slot.endMin - slot.startMin) * PX_PER_MIN)}px`;
         slotEl.style.background = colorByOwner(slot.owner_uid);
@@ -4231,12 +4310,16 @@ function renderUnifiedScheduleGrid() {
         `;
 
         const confirmEditStart = (event) => {
-          if (!slot.can_edit || !slot.persisted) return;
+          if (!slot.can_edit) return;
+          if (!slot.persisted || unifiedScheduleState.activeSlotIds.has(slot.id)) return;
           const ok = window.confirm("确认开始修改该已保存预约时间块？");
           if (!ok) {
             event.preventDefault();
-            event.stopImmediatePropagation();
+            event.stopPropagation();
+            return false;
           }
+          unifiedScheduleState.activeSlotIds.add(slot.id);
+          renderUnifiedScheduleGrid();
         };
         slotEl.addEventListener("mousedown", confirmEditStart, true);
         slotEl.addEventListener("touchstart", confirmEditStart, { passive: false, capture: true });
@@ -4307,6 +4390,8 @@ function setSchedulePageMode(enabled) {
   schedulePage?.classList.toggle("hidden", !enabled);
   profileCard?.classList.toggle("hidden", enabled);
   authCard?.classList.toggle("hidden", enabled);
+  const adminPanelExperiments = document.getElementById("adminPanelExperiments");
+  adminPanelExperiments?.classList.toggle("hidden", enabled);
 }
 
 async function openSchedulePage(pushHistory = true) {
@@ -4341,6 +4426,7 @@ async function saveUnifiedScheduleChanges() {
       method: "POST",
       json: { operations },
     });
+    unifiedScheduleState.activeSlotIds.clear();
     await loadUnifiedSchedules();
     setStatus(unifiedScheduleStatus, "保存成功", false);
   } catch (error) {
@@ -5099,7 +5185,7 @@ adminExperimentForm?.addEventListener("submit", async (event) => {
     }
 
     const useHostedUpload = uploadState.mode === "upload";
-    const useGithubRepo = uploadState.mode === "github";
+    const useGithubRepo = uploadState.mode === "github" && location === "在线";
     const hasHostedUpload = uploadState.files.length > 0;
     if (location === "在线") {
       if (useHostedUpload) {

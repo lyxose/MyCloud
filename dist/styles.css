@@ -775,6 +775,11 @@ body.is-admin .split {
   outline: 2px solid #245aa4;
 }
 
+.schedule-slot.active-slot {
+  border: 2px dashed #245aa4;
+  outline: none;
+}
+
 .schedule-slot.locked {
   background: rgba(140, 150, 170, 0.3);
   border-color: rgba(120, 130, 150, 0.45);
