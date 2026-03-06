@@ -1106,6 +1106,8 @@ const scheduleState = {
   layoutRetry: false,
   viewStartMin: VIEW_START_DEFAULT,
   viewEndMin: VIEW_END_DEFAULT,
+  referenceLocation: "",
+  syncingReference: false,
 };
 
 function startOfWeek(date) {
@@ -1469,6 +1471,7 @@ function renderScheduleGrid() {
 
         slotEl.addEventListener("click", (event) => {
           event.stopPropagation();
+          if (slot.locked) return;
           if (event.ctrlKey || event.metaKey) {
             toggleSlotSelection(slot.id);
           } else {
@@ -1478,11 +1481,13 @@ function renderScheduleGrid() {
         }, { passive: true });
 
         const deleteSlot = () => {
+          if (slot.locked) return;
           scheduleState.slots = scheduleState.slots.filter((item) => item.id !== slot.id);
           scheduleState.selectedIds.delete(slot.id);
           renderScheduleGrid();
         };
         const editCapacity = () => {
+          if (slot.locked) return;
           const value = prompt("设置人数", String(slot.capacity || 1));
           const num = Number(value);
           if (!Number.isNaN(num) && num > 0) {
@@ -1492,8 +1497,10 @@ function renderScheduleGrid() {
         };
         attachMobileSlotHandlers(slotEl, slot, scheduleState, renderScheduleGrid, deleteSlot, editCapacity);
 
-        enableSlotDrag(slotEl, slot, scheduleState, renderScheduleGrid);
-        enableSlotResize(slotEl, slot, renderScheduleGrid, scheduleState);
+        if (!slot.locked) {
+          enableSlotDrag(slotEl, slot, scheduleState, renderScheduleGrid);
+          enableSlotResize(slotEl, slot, renderScheduleGrid, scheduleState);
+        }
         timeline.appendChild(slotEl);
       });
 
@@ -2118,7 +2125,7 @@ function enableSlotResize(slotEl, slot, renderFn, stateRef) {
 }
 
 function shiftSelectedSlots(minuteDelta) {
-  const selected = scheduleState.slots.filter((slot) => scheduleState.selectedIds.has(slot.id));
+  const selected = scheduleState.slots.filter((slot) => scheduleState.selectedIds.has(slot.id) && !slot.locked);
   selected.forEach((slot) => {
     const duration = slot.endMin - slot.startMin;
     let nextStart = Math.max(0, Math.min(1440 - duration, slot.startMin + minuteDelta));
@@ -2130,7 +2137,7 @@ function shiftSelectedSlots(minuteDelta) {
 
 function deleteSelectedSlots() {
   if (scheduleState.selectedIds.size === 0) return;
-  scheduleState.slots = scheduleState.slots.filter((slot) => !scheduleState.selectedIds.has(slot.id));
+  scheduleState.slots = scheduleState.slots.filter((slot) => slot.locked || !scheduleState.selectedIds.has(slot.id));
   scheduleState.selectedIds.clear();
   renderScheduleGrid();
 }
@@ -2139,7 +2146,7 @@ function setSelectedSlotCapacity(value) {
   const num = Number(value);
   if (Number.isNaN(num) || num <= 0) return;
   scheduleState.slots.forEach((slot) => {
-    if (scheduleState.selectedIds.has(slot.id)) {
+    if (scheduleState.selectedIds.has(slot.id) && !slot.locked) {
       slot.capacity = num;
     }
   });
@@ -2176,15 +2183,89 @@ function setAdminSelectedSlotCapacity(value) {
 }
 
 function buildSchedulePayload() {
-  return scheduleState.slots.map((slot) => {
-    const start = new Date(`${slot.date}T${formatMinutes(slot.startMin)}:00`);
-    const end = new Date(`${slot.date}T${formatMinutes(slot.endMin)}:00`);
-    return {
-      start_time: start.toISOString(),
-      end_time: end.toISOString(),
-      capacity: slot.capacity,
-    };
-  });
+  return scheduleState.slots
+    .filter((slot) => !slot.locked)
+    .map((slot) => {
+      const start = new Date(`${slot.date}T${formatMinutes(slot.startMin)}:00`);
+      const end = new Date(`${slot.date}T${formatMinutes(slot.endMin)}:00`);
+      return {
+        start_time: start.toISOString(),
+        end_time: end.toISOString(),
+        capacity: slot.capacity,
+      };
+    });
+}
+
+function getDraftExperimentLocation() {
+  const base = String(locationSelect?.value || "").trim();
+  if (!base) return "";
+  if (base !== "其他") return base;
+  return String(adminExperimentForm?.querySelector("input[name='location_custom']")?.value || "").trim();
+}
+
+function toDraftReferenceSlot(block) {
+  if (!block?.start_time || !block?.end_time) return null;
+  const start = new Date(block.start_time);
+  const end = new Date(block.end_time);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  const label = String(block.subject_name || "").trim()
+    || (String(block.source_type || "") === "manual" ? "统一排期" : "已预约");
+  return {
+    id: `new_ref_${String(block.id || `${start.getTime()}_${end.getTime()}`)}`,
+    date: formatLocalDate(start),
+    startMin: start.getHours() * 60 + start.getMinutes(),
+    endMin: end.getHours() * 60 + end.getMinutes(),
+    capacity: 1,
+    locked: true,
+    participants: label ? [{ name: label }] : [],
+    sourceType: block.source_type,
+    ownerName: String(block.owner_name || ""),
+  };
+}
+
+async function syncNewExperimentReferenceSchedule(force = false) {
+  if (!(state.role === "admin" || state.role === "root")) return;
+  const needSchedule = scheduleRequired?.value === "yes";
+  const location = getDraftExperimentLocation();
+
+  if (!needSchedule || !location || location === "在线") {
+    scheduleState.referenceLocation = "";
+    scheduleState.slots = scheduleState.slots.filter((slot) => !slot.locked);
+    scheduleState.selectedIds = new Set(
+      Array.from(scheduleState.selectedIds).filter((id) => scheduleState.slots.some((slot) => slot.id === id))
+    );
+    renderScheduleGrid();
+    return;
+  }
+
+  if (!force && scheduleState.referenceLocation === location && scheduleState.slots.some((slot) => slot.locked)) {
+    return;
+  }
+
+  const previousLocation = scheduleState.referenceLocation;
+  scheduleState.syncingReference = true;
+  setStatus(adminExperimentStatus, `正在同步 ${location} 的已占用时段...`, false);
+  try {
+    const data = await apiRequest(`/admin/unified-schedule?location=${encodeURIComponent(location)}`, { method: "GET" });
+    const blocks = Array.isArray(data?.blocks) ? data.blocks : [];
+    const lockedSlots = blocks.map(toDraftReferenceSlot).filter(Boolean);
+
+    const keepEditable = previousLocation === location
+      ? scheduleState.slots.filter((slot) => !slot.locked)
+      : [];
+
+    scheduleState.referenceLocation = location;
+    scheduleState.slots = [...keepEditable, ...lockedSlots];
+    scheduleState.selectedIds = new Set(
+      Array.from(scheduleState.selectedIds).filter((id) => scheduleState.slots.some((slot) => slot.id === id && !slot.locked))
+    );
+    renderScheduleGrid();
+    setStatus(adminExperimentStatus, `已同步 ${location} 的排期占用（灰色不可编辑）`, false);
+  } catch (error) {
+    setStatus(adminExperimentStatus, `同步地点排期失败：${error.message}`, true);
+  } finally {
+    scheduleState.syncingReference = false;
+  }
 }
 
 const scheduleScrollState = {
@@ -4854,7 +4935,7 @@ uploadTabs?.querySelectorAll(".mini-tab").forEach((tab) => {
 });
 
 
-locationSelect?.addEventListener("change", () => {
+locationSelect?.addEventListener("change", async () => {
   const isOnline = locationSelect.value === "在线";
   uploadTabs?.classList.toggle("hidden", !isOnline);
   if (!isOnline) {
@@ -4877,16 +4958,28 @@ locationSelect?.addEventListener("change", () => {
   updateAccessControlHint(accessControlMode, accessControlHint);
   updateTokenScriptHelp();
   syncAdminHelpCardHeight();
+  await syncNewExperimentReferenceSchedule(true);
 });
+const locationCustomInput = adminExperimentForm?.querySelector("input[name='location_custom']");
+locationCustomInput?.addEventListener("change", async () => {
+  if (locationSelect?.value !== "其他") return;
+  await syncNewExperimentReferenceSchedule(true);
+});
+locationCustomInput?.addEventListener("blur", async () => {
+  if (locationSelect?.value !== "其他") return;
+  await syncNewExperimentReferenceSchedule(true);
+});
+
 accessControlMode?.addEventListener("change", () => {
   updateAccessControlHint(accessControlMode, accessControlHint);
   updateTokenScriptHelp();
 });
 
-scheduleRequired?.addEventListener("change", () => {
+scheduleRequired?.addEventListener("change", async () => {
   scheduleEditor?.classList.toggle("hidden", scheduleRequired.value !== "yes");
   scheduleSlotsRequiredField?.classList.toggle("hidden", scheduleRequired.value !== "yes");
   syncAdminHelpCardHeight();
+  await syncNewExperimentReferenceSchedule(true);
 });
 
 schedulePrev?.addEventListener("click", () => {
@@ -4947,7 +5040,7 @@ scheduleFill?.addEventListener("click", () => {
     return;
   }
   const dayKey = formatLocalDate(date);
-  scheduleState.slots = scheduleState.slots.filter((slot) => slot.date !== dayKey);
+  scheduleState.slots = scheduleState.slots.filter((slot) => slot.date !== dayKey || slot.locked);
   let cursor = 9 * 60;
   while (cursor + durationMin <= 22 * 60) {
     addScheduleSlot({ date, startMin: cursor, endMin: cursor + durationMin, capacity: 1 });
@@ -5258,6 +5351,7 @@ adminExperimentForm?.addEventListener("submit", async (event) => {
 
     setStatus(adminExperimentStatus, `发布成功，实验编号 ${result.experiment_uid}`);
     scheduleState.slots = [];
+    scheduleState.referenceLocation = "";
     adminExperimentForm.reset();
     resetUploadState();
     setUploadMode("link");
