@@ -2501,8 +2501,12 @@ function renderAdminEditScheduleGrid() {
         slotEl.dataset.id = slot.id;
         if (slot.locked) {
           let displayText;
-          if (slot.sourceType) {
-            // Cross-experiment or unified manual block
+          // 优先显示被试名字，无论sourceType如何
+          const participantNames = (slot.participants || []).map((p) => p.name).join("、");
+          if (participantNames) {
+            displayText = participantNames;
+          } else if (slot.sourceType) {
+            // 无被试时才根据sourceType显示
             if (slot.sourceType === "unified_manual") {
               displayText = "统一排期";
             } else if (slot.experimentName) {
@@ -2511,8 +2515,7 @@ function renderAdminEditScheduleGrid() {
               displayText = "其他实验";
             }
           } else {
-            // Regular locked slot with participants
-            displayText = (slot.participants || []).map((p) => p.name).join("、") || "已预约";
+            displayText = "已预约";
           }
           slotEl.innerHTML = `
             <div class="slot-time">
@@ -4604,10 +4607,20 @@ function isSchedulePath() {
 function setSchedulePageMode(enabled) {
   schedulePage?.classList.toggle("hidden", !enabled);
   profileCard?.classList.toggle("hidden", enabled);
-  authCard?.classList.toggle("hidden", enabled);
   const adminPanelExperiments = document.getElementById("adminPanelExperiments");
   adminPanelExperiments?.classList.toggle("hidden", enabled);
   adminExperimentsSection?.classList.toggle("hidden", enabled);
+  // authCard显示状态应依据登录状态，而非简单toggle
+  if (enabled) {
+    authCard?.classList.add("hidden");
+  } else {
+    // 退出scheduler模式时，只在未登录状态下显示authCard
+    if (state.profile) {
+      authCard?.classList.add("hidden");
+    } else {
+      authCard?.classList.remove("hidden");
+    }
+  }
 }
 
 async function openSchedulePage(pushHistory = true) {
