@@ -1458,12 +1458,14 @@ function renderScheduleGrid() {
             <div class="slot-count">${names}</div>
           `;
         } else {
+          const participantNames = (slot.participants || []).map((p) => p.name).join("、");
+          const countLabel = participantNames || `${slot.capacity}人`;
           slotEl.innerHTML = `
             <div class="slot-time">
               <span class="slot-time-start">${formatMinutes(slot.startMin)}</span>
               <span class="slot-time-end">${formatMinutes(slot.endMin)}</span>
             </div>
-            <div class="slot-count">${slot.capacity}人</div>
+            <div class="slot-count">${countLabel}</div>
             <div class="slot-handle top">▲</div>
             <div class="slot-handle bottom">▼</div>
           `;
@@ -2512,11 +2514,16 @@ function renderAdminEditScheduleGrid() {
           const confirmSavedEditStart = (event) => {
             const isPersisted = String(slot.id || "").startsWith("existing_") || Number.isFinite(Number(slot.originalId));
             if (!isPersisted || adminScheduleState.activeSlotIds.has(slot.id)) return;
-            const ok = window.confirm("确认开始修改该已保存预约时间块？");
-            if (!ok) {
-              event.preventDefault();
-              event.stopPropagation();
-              return false;
+            const hasBookedParticipants = Array.isArray(slot.participants) && slot.participants.length > 0;
+            const slotEnd = Date.parse(`${slot.date}T${formatMinutes(slot.endMin)}:00`);
+            const isUpcoming = Number.isFinite(slotEnd) ? slotEnd > Date.now() : false;
+            if (hasBookedParticipants && isUpcoming) {
+              const ok = window.confirm("该时间段已有被试预约。修改前请先通知被试时间变动，确认继续修改？");
+              if (!ok) {
+                event.preventDefault();
+                event.stopPropagation();
+                return false;
+              }
             }
             adminScheduleState.activeSlotIds.add(slot.id);
             renderAdminEditScheduleGrid();
@@ -2642,14 +2649,18 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
 
 function buildAdminSchedulePayload() {
   return adminScheduleState.slots
-    .filter(slot => !slot.locked) // Exclude locked slots (cross-experiment and manual blocks)
+    .filter((slot) => !slot.sourceType) // Exclude cross-experiment/manual reference slots
     .map((slot) => {
       const start = new Date(`${slot.date}T${formatMinutes(slot.startMin)}:00`);
       const end = new Date(`${slot.date}T${formatMinutes(slot.endMin)}:00`);
+      const participants = Array.isArray(slot.participants) ? slot.participants : [];
       return {
+        original_id: Number.isFinite(Number(slot.originalId)) ? Number(slot.originalId) : null,
         start_time: start.toISOString(),
         end_time: end.toISOString(),
         capacity: slot.capacity,
+        participants_json: JSON.stringify(participants),
+        locked: participants.length > 0 ? 1 : 0,
       };
     });
 }
@@ -2666,6 +2677,7 @@ function convertSlotToSchedule(slot) {
   if (!slot.start_time || !slot.end_time) return null;
   const start = new Date(slot.start_time);
   const end = new Date(slot.end_time);
+  const participants = parseSlotParticipants(slot);
   return {
     id: `existing_${slot.id}`,
     originalId: slot.id,
@@ -2673,8 +2685,8 @@ function convertSlotToSchedule(slot) {
     startMin: start.getHours() * 60 + start.getMinutes(),
     endMin: end.getHours() * 60 + end.getMinutes(),
     capacity: slot.capacity || 1,
-    locked: slot.locked === 1,
-    participants: parseSlotParticipants(slot),
+    locked: false,
+    participants,
   };
 }
 
@@ -4119,6 +4131,22 @@ const unifiedScheduleState = {
   ownerColors: new Map(),
 };
 
+function formatDateCn(date) {
+  const d = date instanceof Date ? date : new Date(date);
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+}
+
+function getUnifiedEarliestSlotDate(location = "") {
+  let earliest = null;
+  unifiedScheduleState.slots.forEach((slot) => {
+    if (!slot.date) return;
+    if (location && String(slot.location || "") !== String(location)) return;
+    const d = startOfDay(new Date(`${slot.date}T00:00:00`));
+    if (!earliest || d < earliest) earliest = d;
+  });
+  return earliest;
+}
+
 function colorByOwner(userUid) {
   const safe = String(userUid || "unknown");
   const currentUserUid = String(state.profile?.user_uid || "");
@@ -4218,7 +4246,7 @@ async function loadUnifiedSchedules() {
   if (!(state.role === "admin" || state.role === "root")) return;
   setStatus(unifiedScheduleStatus, "正在加载统一排期表...", false);
   try {
-    const data = await apiRequest("/admin/unified-schedule", { method: "GET" });
+    const data = await apiRequest("/admin/unified-schedule?include_history=1", { method: "GET" });
     const locations = Array.isArray(data?.locations) ? data.locations : [];
     unifiedScheduleState.locations = locations.filter((item) => item && item !== "在线");
     unifiedScheduleState.slots = (data?.blocks || []).map(toUnifiedSlot);
@@ -4267,6 +4295,9 @@ function renderUnifiedScheduleGrid() {
   }
   if (unifiedScheduleState.dayCount !== dayCount) {
     unifiedScheduleState.dayCount = dayCount;
+    if (unifiedScheduleState.autoStart) {
+      unifiedScheduleState.weekStart = normalizeStartDate(new Date(), dayCount);
+    }
     if (unifiedScheduleState.activeDayIndex >= dayCount) unifiedScheduleState.activeDayIndex = 0;
   }
   const days = buildWeekDates(unifiedScheduleState.weekStart, dayCount);
@@ -4473,6 +4504,7 @@ function setSchedulePageMode(enabled) {
   authCard?.classList.toggle("hidden", enabled);
   const adminPanelExperiments = document.getElementById("adminPanelExperiments");
   adminPanelExperiments?.classList.toggle("hidden", enabled);
+  adminExperimentsSection?.classList.toggle("hidden", enabled);
 }
 
 async function openSchedulePage(pushHistory = true) {
@@ -4852,9 +4884,18 @@ schedulePageBackBtn?.addEventListener("click", () => {
 
 unifiedSchedulePrev?.addEventListener("click", () => {
   const step = getDayStep(unifiedScheduleState.dayCount || 7);
+  const currentLocation = String(unifiedScheduleState.currentLocation || "");
+  const earliestSlot = getUnifiedEarliestSlotDate(currentLocation);
+  if (!earliestSlot) return;
+  const minStart = normalizeStartDate(earliestSlot, unifiedScheduleState.dayCount || 7);
   const next = new Date(unifiedScheduleState.weekStart);
   next.setDate(next.getDate() - step);
+  if (next < minStart) {
+    setStatus(unifiedScheduleStatus, `最早预约记录在 ${formatDateCn(minStart)}`, true);
+    return;
+  }
   unifiedScheduleState.weekStart = normalizeStartDate(next, unifiedScheduleState.dayCount || 7);
+  unifiedScheduleState.autoStart = false;
   renderUnifiedScheduleGrid();
 });
 
@@ -4878,10 +4919,13 @@ unifiedScheduleTitle?.addEventListener("click", () => {
     setStatus(unifiedScheduleStatus, "日期格式无效", true);
     return;
   }
-  const todayStart = normalizeStartDate(new Date(), unifiedScheduleState.dayCount || 7);
+  const earliestSlot = getUnifiedEarliestSlotDate(String(unifiedScheduleState.currentLocation || ""));
+  const minStart = earliestSlot
+    ? normalizeStartDate(earliestSlot, unifiedScheduleState.dayCount || 7)
+    : normalizeStartDate(new Date(), unifiedScheduleState.dayCount || 7);
   const normalizedTarget = normalizeStartDate(target, unifiedScheduleState.dayCount || 7);
-  if (normalizedTarget < todayStart) {
-    setStatus(unifiedScheduleStatus, "统一排期不能跳转到今天之前", true);
+  if (normalizedTarget < minStart) {
+    setStatus(unifiedScheduleStatus, `最早预约记录在 ${formatDateCn(minStart)}`, true);
     return;
   }
   unifiedScheduleState.weekStart = normalizedTarget;
