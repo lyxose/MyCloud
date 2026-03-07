@@ -1497,7 +1497,17 @@ function renderScheduleGrid() {
             renderScheduleGrid();
           }
         };
-        attachMobileSlotHandlers(slotEl, slot, scheduleState, renderScheduleGrid, deleteSlot, editCapacity);
+        bindSlotOwnershipTooltip(slotEl, slot, getDraftSlotExperimentName);
+        attachMobileSlotHandlers(
+          slotEl,
+          slot,
+          scheduleState,
+          renderScheduleGrid,
+          deleteSlot,
+          editCapacity,
+          null,
+          () => `所属实验：${getDraftSlotExperimentName(slot)}`
+        );
 
         if (!slot.locked) {
           enableSlotDrag(slotEl, slot, scheduleState, renderScheduleGrid);
@@ -1606,10 +1616,16 @@ function closeSlotActionMenu() {
   slotActionMenu = null;
 }
 
-function openSlotActionMenu(x, y, actions) {
+function openSlotActionMenu(x, y, actions, titleText = "") {
   closeSlotActionMenu();
   const menu = document.createElement("div");
   menu.className = "slot-action-menu";
+  if (titleText) {
+    const title = document.createElement("div");
+    title.className = "slot-action-menu-title";
+    title.textContent = titleText;
+    menu.appendChild(title);
+  }
   actions.forEach((action) => {
     const btn = document.createElement("button");
     btn.type = "button";
@@ -1629,6 +1645,57 @@ function openSlotActionMenu(x, y, actions) {
     if (!menu.contains(event.target)) closeSlotActionMenu();
   };
   document.addEventListener("touchstart", slotActionMenuCloseHandler, { passive: true });
+}
+
+function getUnifiedSlotExperimentName(slot) {
+  const sourceType = String(slot?.source_type || slot?.sourceType || "");
+  if (sourceType === "manual" || sourceType === "unified_manual") return "无";
+  return String(slot?.experiment_name || slot?.experimentName || "").trim() || "无";
+}
+
+function getAdminSlotExperimentName(slot) {
+  const sourceType = String(slot?.sourceType || "");
+  if (sourceType === "unified_manual") return "无";
+  if (sourceType === "other_experiment") {
+    return String(slot?.experimentName || "").trim() || "无";
+  }
+  return String(adminEditState?.experiment?.name || "").trim() || "无";
+}
+
+function getDraftSlotExperimentName(slot) {
+  const sourceType = String(slot?.sourceType || "");
+  if (sourceType === "manual" || sourceType === "unified_manual") return "无";
+  if (slot?.locked) return String(slot?.experimentName || "").trim() || "无";
+  const draftName = String(adminExperimentForm?.querySelector("input[name='name']")?.value || "").trim();
+  return draftName || "当前新实验";
+}
+
+function removeTooltip() {
+  const existing = document.querySelector(".tooltip");
+  if (existing) existing.remove();
+}
+
+function bindSlotOwnershipTooltip(slotEl, slot, getExperimentName) {
+  if (!slotEl || typeof getExperimentName !== "function") return;
+  let lastX = 0;
+  let lastY = 0;
+  const renderTip = () => {
+    const name = String(getExperimentName(slot) || "").trim() || "无";
+    showTooltip(`所属实验：${name}`, lastX + 8, lastY + 8, { durationMs: 0 });
+  };
+  slotEl.addEventListener("mouseenter", (event) => {
+    lastX = event.pageX;
+    lastY = event.pageY;
+    renderTip();
+  });
+  slotEl.addEventListener("mousemove", (event) => {
+    lastX = event.pageX;
+    lastY = event.pageY;
+    renderTip();
+  });
+  slotEl.addEventListener("mouseleave", () => {
+    removeTooltip();
+  });
 }
 
 function applySlotNudge(delta) {
@@ -1880,7 +1947,7 @@ function startTouchResize(slotEl, slot, stateRef, renderFn, startY, preferredEdg
   document.addEventListener("touchcancel", onEnd);
 }
 
-function attachMobileSlotHandlers(slotEl, slot, stateRef, renderFn, onDelete, onCapacityEdit, onLockedTap) {
+function attachMobileSlotHandlers(slotEl, slot, stateRef, renderFn, onDelete, onCapacityEdit, onLockedTap, getLongPressTitle) {
   let pressTimer = null;
   let moved = false;
   let longPressed = false;
@@ -1901,7 +1968,14 @@ function attachMobileSlotHandlers(slotEl, slot, stateRef, renderFn, onDelete, on
     cancelPress();
     pressTimer = setTimeout(() => {
       longPressed = true;
-      if (slot.locked) return;
+      const titleText = typeof getLongPressTitle === "function" ? getLongPressTitle(slot) : "";
+      if (slot.locked) {
+        openSlotActionMenu(startX, startY, [{
+          label: "关闭",
+          onClick: () => {},
+        }], titleText);
+        return;
+      }
       openSlotActionMenu(startX, startY, [
         {
           label: "拖动",
@@ -1926,7 +2000,7 @@ function attachMobileSlotHandlers(slotEl, slot, stateRef, renderFn, onDelete, on
           danger: true,
           onClick: onDelete,
         },
-      ]);
+      ], titleText);
     }, 500);
   }, { passive: true });
 
@@ -2221,6 +2295,7 @@ function toDraftReferenceSlot(block) {
     locked: true,
     participants: label ? [{ name: label }] : [],
     sourceType: block.source_type,
+    experimentName: String(block.experiment_name || ""),
     ownerName: String(block.owner_name || ""),
   };
 }
@@ -2508,7 +2583,17 @@ function renderAdminEditScheduleGrid() {
             showTooltip(contacts, touch.clientX + 8, touch.clientY + 8);
           }
         };
-        attachMobileSlotHandlers(slotEl, slot, adminScheduleState, renderAdminEditScheduleGrid, deleteSlot, editCapacity, lockedTap);
+        bindSlotOwnershipTooltip(slotEl, slot, getAdminSlotExperimentName);
+        attachMobileSlotHandlers(
+          slotEl,
+          slot,
+          adminScheduleState,
+          renderAdminEditScheduleGrid,
+          deleteSlot,
+          editCapacity,
+          lockedTap,
+          () => `所属实验：${getAdminSlotExperimentName(slot)}`
+        );
 
         if (!slot.locked) {
           const confirmSavedEditStart = (event) => {
@@ -2727,6 +2812,7 @@ async function loadProfile() {
         await openSchedulePage(false);
       } else {
         history.replaceState({}, "", "/");
+        closeSchedulePage(false);
       }
     }
   } catch (error) {
@@ -2735,6 +2821,10 @@ async function loadProfile() {
     state.profile = null;
     state.role = null;
     renderProfile();
+    if (isSchedulePath()) {
+      history.replaceState({}, "", "/");
+      closeSchedulePage(false);
+    }
   }
 }
 
@@ -3968,18 +4058,20 @@ function renderAdminExperimentList(experiments) {
   });
 }
 
-function showTooltip(text, x, y) {
-  const existing = document.querySelector(".tooltip");
-  if (existing) existing.remove();
+function showTooltip(text, x, y, options = {}) {
+  removeTooltip();
   const tip = document.createElement("div");
   tip.className = "tooltip";
   tip.textContent = text;
   tip.style.left = `${x}px`;
   tip.style.top = `${y}px`;
   document.body.appendChild(tip);
-  setTimeout(() => {
-    tip.remove();
-  }, 4000);
+  const durationMs = Number(options?.durationMs ?? 4000);
+  if (durationMs > 0) {
+    setTimeout(() => {
+      tip.remove();
+    }, durationMs);
+  }
 }
 
 async function loadParticipantsForExperiment(experimentUid, list) {
@@ -4163,6 +4255,7 @@ function toUnifiedSlot(block) {
     id: String(block.id),
     persisted: true,
     source_type: block.source_type,
+    experiment_name: String(block.experiment_name || ""),
     location: String(block.location || ""),
     date: formatLocalDate(start),
     startMin: start.getHours() * 60 + start.getMinutes(),
@@ -4467,7 +4560,17 @@ function renderUnifiedScheduleGrid() {
           unifiedScheduleState.dirty = true;
           renderUnifiedScheduleGrid();
         };
-        attachMobileSlotHandlers(slotEl, slot, unifiedScheduleState, renderUnifiedScheduleGrid, deleteSlot, editSubject);
+        bindSlotOwnershipTooltip(slotEl, slot, getUnifiedSlotExperimentName);
+        attachMobileSlotHandlers(
+          slotEl,
+          slot,
+          unifiedScheduleState,
+          renderUnifiedScheduleGrid,
+          deleteSlot,
+          editSubject,
+          null,
+          () => `所属实验：${getUnifiedSlotExperimentName(slot)}`
+        );
 
         if (slot.can_edit) {
           enableAdminSlotDrag(slotEl, slot, unifiedScheduleState, () => {
@@ -5490,6 +5593,11 @@ refreshAdminTabCopyHint();
 setUploadMode(uploadState.mode);
 if (locationSelect?.value !== "在线") {
   uploadTabs?.classList.add("hidden");
+}
+
+if (isSchedulePath() && !state.token) {
+  history.replaceState({}, "", "/");
+  closeSchedulePage(false);
 }
 
 loadProfile();

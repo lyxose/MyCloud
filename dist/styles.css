@@ -988,6 +988,14 @@ body.is-admin .split {
   min-width: 140px;
 }
 
+.slot-action-menu-title {
+  font-size: 0.75rem;
+  color: #4c5a6a;
+  padding: 0.2rem 0.4rem 0.3rem;
+  border-bottom: 1px dashed rgba(58, 123, 213, 0.28);
+  margin-bottom: 0.1rem;
+}
+
 .slot-action-menu button {
   border: none;
   background: #eef4fb;
