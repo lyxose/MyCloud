@@ -3064,6 +3064,20 @@ function formatMissingProfilePrompt(eligibility) {
   return `请完善以下信息：${missing.join("、")}。完善并保存后刷新页面方可报名。`;
 }
 
+function escapeHtml(text) {
+  return String(text ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function formatMultilineTextHtml(text, prefix = "") {
+  const normalized = String(text ?? "").replace(/\r\n?/g, "\n");
+  return escapeHtml(`${prefix}${normalized}`).replace(/\n/g, "<br>");
+}
+
 function renderExperiments() {
   const container = experimentForm?.querySelector(".experiment-list");
   if (!container) return;
@@ -3096,7 +3110,12 @@ function renderExperiments() {
     const rewardText = formatRewardWithUnit(exp.reward);
     const durationText = formatDurationWithUnit(exp.duration_min);
     const deviceHint = exp.device_restriction_hint || "";
-    const noticeText = exp.notes ? `注意：${exp.notes}` : "";
+    const descriptionHtml = exp.description
+      ? formatMultilineTextHtml(exp.description)
+      : "暂无简介";
+    const noticeHtml = exp.notes
+      ? formatMultilineTextHtml(exp.notes, "注意：")
+      : "";
     const slotHint = exp.schedule_required
       ? formatSlotRequirementHint(exp.schedule_slots_required || "=1")
       : "";
@@ -3109,10 +3128,10 @@ function renderExperiments() {
         <span>${exp.type}</span>
       </div>
       <div class="experiment-card-body">
-        <p>${exp.description || "暂无简介"}</p>
+        <p>${descriptionHtml}</p>
         <p class="hint experiment-meta-line"><span>${rewardText}</span><span class="experiment-meta-right">${durationText}</span></p>
         ${deviceHint ? `<p class="notice">⚠️ ${deviceHint}</p>` : ""}
-        ${noticeText ? `<p class="notice">${noticeText}</p>` : ""}
+        ${noticeHtml ? `<p class="notice">${noticeHtml}</p>` : ""}
         ${slotHint ? `<p class="hint">${slotHint}</p>` : ""}
         ${eligibility ? `<p class="hint">${eligibility}</p>` : ""}
         ${missingProfilePrompt ? `<p class="notice">⚠️ ${missingProfilePrompt}</p>` : ""}
@@ -3201,7 +3220,7 @@ function renderAppliedExperiments() {
     const card = document.createElement("div");
     card.className = "experiment-card";
     const contact = item.contact ? `主试联系方式：${item.contact}` : "主试联系方式：-";
-    const notice = item.notes ? `${item.notes}` : "";
+    const noticeHtml = item.notes ? formatMultilineTextHtml(item.notes) : "";
     const reward = formatRewardWithUnit(item.reward);
     const duration = formatDurationWithUnit(item.durationMin);
     const deviceNotice = item.deviceHint ? `⚠️ ${item.deviceHint}` : "";
@@ -3215,7 +3234,7 @@ function renderAppliedExperiments() {
         <p class="hint">预约时间：${item.slotLabel}</p>
         <p class="hint experiment-meta-line"><span>${reward}</span><span class="experiment-meta-right">${duration}</span></p>
         ${deviceNotice ? `<p class="notice">${deviceNotice}</p>` : ""}
-        ${notice ? `<p class="notice">${notice}</p>` : ""}
+        ${noticeHtml ? `<p class="notice">${noticeHtml}</p>` : ""}
         <p class="hint">${contact}</p>
         ${hasOnlineLink ? `<button type="button" class="ghost" data-action="copy-link">复制实验链接</button>` : ""}
       </div>
