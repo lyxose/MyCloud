@@ -549,7 +549,10 @@ const unifiedScheduleGrid = document.getElementById("unifiedScheduleGrid");
 const unifiedScheduleStatus = document.getElementById("unifiedScheduleStatus");
 const unifiedScheduleTitle = document.getElementById("unifiedScheduleTitle");
 const unifiedSchedulePrev = document.getElementById("unifiedSchedulePrev");
+const unifiedScheduleToday = document.getElementById("unifiedScheduleToday");
 const unifiedScheduleNext = document.getElementById("unifiedScheduleNext");
+const unifiedScheduleUp = document.getElementById("unifiedScheduleUp");
+const unifiedScheduleDown = document.getElementById("unifiedScheduleDown");
 const unifiedScheduleSave = document.getElementById("unifiedScheduleSave");
 
 const VIEW_START_DEFAULT = 9 * 60;
@@ -1126,7 +1129,7 @@ function startOfDay(date) {
 }
 
 function normalizeStartDate(date, dayCount) {
-  return dayCount < 7 ? startOfDay(date) : startOfWeek(date);
+  return startOfDay(date);
 }
 
 function isDateBeforeToday(date) {
@@ -1213,7 +1216,7 @@ function getDayColumnCount(gridEl) {
   const rootStyles = getComputedStyle(document.documentElement);
   const timeWidth = Number(rootStyles.getPropertyValue("--time-col-width").replace("px", "")) || 32;
   const gap = 6;
-  const available = Math.max(0, gridEl.clientWidth - timeWidth - 12);
+  const available = Math.max(0, gridEl.clientWidth - timeWidth - 20);
   const minDayWidth = 92;
   const count = Math.floor((available + gap) / (minDayWidth + gap));
   return Math.max(1, Math.min(7, count || 1));
@@ -3564,6 +3567,7 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
     <div class="schedule-editor full-width ${showScheduleEditor ? "" : "hidden"}" id="adminEditScheduleEditor">
       <div class="schedule-header">
         <button type="button" class="ghost" id="adminEditSchedulePrev">◀</button>
+        <button type="button" class="ghost" id="adminEditScheduleToday">今</button>
         <div id="adminEditScheduleTitle"></div>
         <button type="button" class="ghost" id="adminEditScheduleNext">▶</button>
         <button type="button" class="ghost" id="adminEditScheduleUp">▲</button>
@@ -3583,6 +3587,7 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
   const editQuota = panel.querySelector("#adminEditQuota");
   const editScheduleSave = panel.querySelector("#adminEditScheduleSave");
   const editSchedulePrev = panel.querySelector("#adminEditSchedulePrev");
+  const editScheduleToday = panel.querySelector("#adminEditScheduleToday");
   const editScheduleNext = panel.querySelector("#adminEditScheduleNext");
   const editScheduleTitle = panel.querySelector("#adminEditScheduleTitle");
   const editScheduleUp = panel.querySelector("#adminEditScheduleUp");
@@ -3910,8 +3915,11 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
     const minStart = earliestStart < todayStart ? earliestStart : todayStart;
     const next = new Date(adminScheduleState.weekStart);
     next.setDate(next.getDate() - getDayStep(adminScheduleState.dayCount));
-    if (next < minStart) return;
-    adminScheduleState.weekStart = next;
+    if (next < minStart) {
+      adminScheduleState.weekStart = minStart;
+    } else {
+      adminScheduleState.weekStart = next;
+    }
     adminScheduleState.autoStart = false;
     renderAdminEditScheduleGrid();
   });
@@ -3920,6 +3928,13 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
     const next = new Date(adminScheduleState.weekStart);
     next.setDate(next.getDate() + getDayStep(adminScheduleState.dayCount));
     adminScheduleState.weekStart = next;
+    adminScheduleState.autoStart = false;
+    renderAdminEditScheduleGrid();
+  });
+
+  editScheduleToday?.addEventListener("click", () => {
+    const todayStart = normalizeStartDate(new Date(), adminScheduleState.dayCount);
+    adminScheduleState.weekStart = todayStart;
     adminScheduleState.autoStart = false;
     renderAdminEditScheduleGrid();
   });
@@ -5028,16 +5043,18 @@ schedulePageBackBtn?.addEventListener("click", () => {
 unifiedSchedulePrev?.addEventListener("click", () => {
   const step = getDayStep(unifiedScheduleState.dayCount || 7);
   const currentLocation = String(unifiedScheduleState.currentLocation || "");
+  const todayStart = normalizeStartDate(new Date(), unifiedScheduleState.dayCount || 7);
   const earliestSlot = getUnifiedEarliestSlotDate(currentLocation);
-  if (!earliestSlot) return;
-  const minStart = normalizeStartDate(earliestSlot, unifiedScheduleState.dayCount || 7);
+  const earliestStart = earliestSlot ? normalizeStartDate(earliestSlot, unifiedScheduleState.dayCount || 7) : null;
+  const minStart = earliestStart && earliestStart < todayStart ? earliestStart : todayStart;
   const next = new Date(unifiedScheduleState.weekStart);
   next.setDate(next.getDate() - step);
   if (next < minStart) {
-    setStatus(unifiedScheduleStatus, `最早预约记录在 ${formatDateCn(minStart)}`, true);
-    return;
+    unifiedScheduleState.weekStart = minStart;
+    setStatus(unifiedScheduleStatus, `已到达最早日期 ${formatDateCn(minStart)}`, false);
+  } else {
+    unifiedScheduleState.weekStart = normalizeStartDate(next, unifiedScheduleState.dayCount || 7);
   }
-  unifiedScheduleState.weekStart = normalizeStartDate(next, unifiedScheduleState.dayCount || 7);
   unifiedScheduleState.autoStart = false;
   renderUnifiedScheduleGrid();
 });
@@ -5048,6 +5065,21 @@ unifiedScheduleNext?.addEventListener("click", () => {
   next.setDate(next.getDate() + step);
   unifiedScheduleState.weekStart = normalizeStartDate(next, unifiedScheduleState.dayCount || 7);
   renderUnifiedScheduleGrid();
+});
+
+unifiedScheduleToday?.addEventListener("click", () => {
+  const todayStart = normalizeStartDate(new Date(), unifiedScheduleState.dayCount || 7);
+  unifiedScheduleState.weekStart = todayStart;
+  unifiedScheduleState.autoStart = false;
+  renderUnifiedScheduleGrid();
+});
+
+unifiedScheduleUp?.addEventListener("click", () => {
+  shiftViewWindow(unifiedScheduleState, -VIEW_STEP_MIN, renderUnifiedScheduleGrid);
+});
+
+unifiedScheduleDown?.addEventListener("click", () => {
+  shiftViewWindow(unifiedScheduleState, VIEW_STEP_MIN, renderUnifiedScheduleGrid);
 });
 
 unifiedScheduleSave?.addEventListener("click", async () => {
@@ -5173,8 +5205,11 @@ schedulePrev?.addEventListener("click", () => {
   const todayStart = normalizeStartDate(new Date(), scheduleState.dayCount);
   const next = new Date(scheduleState.weekStart);
   next.setDate(next.getDate() - getDayStep(scheduleState.dayCount));
-  if (next < todayStart) return;
-  scheduleState.weekStart = next;
+  if (next < todayStart) {
+    scheduleState.weekStart = todayStart;
+  } else {
+    scheduleState.weekStart = next;
+  }
   scheduleState.autoStart = false;
   renderScheduleGrid();
 });
@@ -5183,6 +5218,13 @@ scheduleNext?.addEventListener("click", () => {
   const next = new Date(scheduleState.weekStart);
   next.setDate(next.getDate() + getDayStep(scheduleState.dayCount));
   scheduleState.weekStart = next;
+  scheduleState.autoStart = false;
+  renderScheduleGrid();
+});
+
+scheduleToday?.addEventListener("click", () => {
+  const todayStart = normalizeStartDate(new Date(), scheduleState.dayCount);
+  scheduleState.weekStart = todayStart;
   scheduleState.autoStart = false;
   renderScheduleGrid();
 });
