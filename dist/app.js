@@ -2782,6 +2782,14 @@ function convertCrossSlotToSchedule(crossSlot) {
   if (!crossSlot.start_time || !crossSlot.end_time) return null;
   const start = new Date(crossSlot.start_time);
   const end = new Date(crossSlot.end_time);
+  // 优先从participants_json解析，如果为空则从subject_name构建
+  let participants = parseSlotParticipants(crossSlot);
+  if (participants.length === 0 && crossSlot.subject_name) {
+    const subjectName = String(crossSlot.subject_name || "").trim();
+    if (subjectName) {
+      participants = [{ name: subjectName }];
+    }
+  }
   return {
     id: crossSlot.id, // Already has "cross_exp:" or "cross_manual:" prefix
     originalId: null, // Cannot edit cross slots
@@ -2790,7 +2798,7 @@ function convertCrossSlotToSchedule(crossSlot) {
     endMin: end.getHours() * 60 + end.getMinutes(),
     capacity: crossSlot.capacity || 1,
     locked: true, // Cross slots are always locked
-    participants: parseSlotParticipants(crossSlot),
+    participants: participants,
     sourceType: crossSlot.source_type,
     ownerName: crossSlot.owner_name,
     experimentName: crossSlot.experiment_name,
