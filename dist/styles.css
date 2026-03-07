@@ -1169,7 +1169,7 @@ body.is-admin .split {
 
 .experiment-panel .experiment-list {
   flex: 1;
-  max-height: 320px;
+  max-height: 448px;
   overflow-y: auto;
 }
 
@@ -1386,6 +1386,10 @@ body.is-admin .split {
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
+}
+
+.experiment-card-body {
+  white-space: pre-line;
 }
 
 .experiment-card-actions {
