@@ -4134,9 +4134,9 @@ function renderAdminExperimentList(experiments) {
         <div class="admin-participant-list hidden"></div>
         <div class="admin-batch-toolbar hidden">
           <span class="admin-batch-count">已选中 0 条（0 名被试）</span>
-          <button type="button" class="ghost" data-action="batch-download-users" disabled>下载选中数据</button>
-          <button type="button" class="ghost" data-action="batch-reject" disabled>拒绝选中被试</button>
-          <button type="button" class="ghost" data-action="batch-download-participants" disabled>下载选中被试表</button>
+          <button type="button" class="ghost" data-action="batch-download-users" disabled>下载数据</button>
+          <button type="button" class="ghost" data-action="batch-reject" disabled>拒绝被试</button>
+          <button type="button" class="ghost" data-action="batch-download-participants" disabled>下载被试表</button>
         </div>
       </div>
     `;
@@ -4416,8 +4416,8 @@ async function loadParticipantsForExperiment(experimentUid, list, options = {}) 
         ? `<button type="button" class="ghost" data-action="restore">恢复被试</button>`
         : `<button type="button" class="ghost" data-action="reject">拒绝被试</button>`;
       item.innerHTML = `
+        <label class="admin-batch-pick"><input type="checkbox" data-action="select-row" /></label>
         <div class="admin-participant-main">
-          <label class="admin-batch-pick"><input type="checkbox" data-action="select-row" /></label>
           <span class="admin-participant-head">${participant.name} (${participant.user_uid}) ${rejectMeta}</span>
           <span class="admin-participant-time">${timeRangeHtml}</span>
         </div>
@@ -4437,6 +4437,17 @@ async function loadParticipantsForExperiment(experimentUid, list, options = {}) 
           onSelectionChange?.();
         });
       }
+
+      item.addEventListener("click", (event) => {
+        if (!batchMode || !rowCheckbox) return;
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        if (target.closest("button, a, input, textarea, select, label[for]")) return;
+        const hasSelection = String(window.getSelection?.()?.toString?.() || "").trim().length > 0;
+        if (hasSelection) return;
+        rowCheckbox.checked = !rowCheckbox.checked;
+        rowCheckbox.dispatchEvent(new Event("change", { bubbles: true }));
+      });
 
       let touchTimer = null;
       item.addEventListener("mouseenter", () => {

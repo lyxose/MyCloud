@@ -348,7 +348,7 @@ textarea:disabled {
 }
 
 .hidden {
-  display: none;
+  display: none !important;
 }
 
 .empty-state {
@@ -985,17 +985,33 @@ body.is-admin .split {
   flex-direction: row;
   align-items: center;
   gap: 0.4rem;
-  margin-bottom: 0.1rem;
+  margin: 0;
   font-size: 0.86rem;
   color: #355172;
+  align-self: center;
 }
 
 .admin-participant-list.batch-mode .admin-batch-pick {
   display: inline-flex;
 }
 
+.admin-participant-list.batch-mode .admin-participant-item {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.7rem;
+}
+
 .admin-participant-list.batch-mode .admin-participant-actions {
   display: none;
+}
+
+.admin-participant-list.batch-mode .admin-participant-item {
+  cursor: pointer;
+}
+
+.admin-batch-pick input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
 }
 
 .admin-participant-head {
