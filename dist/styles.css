@@ -912,6 +912,24 @@ body.is-admin .split {
   gap: 0.4rem;
 }
 
+.admin-batch-toolbar {
+  margin-top: 0.6rem;
+  padding: 0.55rem 0.65rem;
+  background: #edf4ff;
+  border: 1px solid rgba(58, 123, 213, 0.22);
+  border-radius: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.admin-batch-count {
+  font-size: 0.86rem;
+  color: #355172;
+  margin-right: 0.25rem;
+}
+
 .admin-participant-item {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -927,6 +945,24 @@ body.is-admin .split {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
+}
+
+.admin-batch-pick {
+  display: none;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.1rem;
+  font-size: 0.86rem;
+  color: #355172;
+}
+
+.admin-participant-list.batch-mode .admin-batch-pick {
+  display: inline-flex;
+}
+
+.admin-participant-list.batch-mode .admin-participant-actions {
+  display: none;
 }
 
 .admin-participant-head {
@@ -1765,5 +1801,9 @@ body.is-admin .split {
 
   .admin-participant-actions .ghost {
     padding: 0.38rem 0.52rem;
+  }
+
+  .admin-batch-toolbar {
+    gap: 0.35rem;
   }
 }

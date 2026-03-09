@@ -20,6 +20,8 @@ const adminEditState = {
   participants: {},
 };
 
+const adminParticipantsCache = new Map();
+
 const uploadState = {
   prefix: null,
   files: [],
@@ -533,6 +535,7 @@ const accessControlModeField = document.getElementById("accessControlModeField")
 const accessControlMode = document.getElementById("accessControlMode");
 const accessControlHint = document.getElementById("accessControlHint");
 const allowedDevicesField = document.getElementById("allowedDevicesField");
+const allowedBrowsersField = document.getElementById("allowedBrowsersField");
 const sameDeviceSingleAccount = document.getElementById("sameDeviceSingleAccount");
 const tokenScriptHelp = document.getElementById("tokenScriptHelp");
 const tokenScriptMask = null;
@@ -573,6 +576,16 @@ function setLoadingBlock(container, text = "加载中...") {
       <span>${text}</span>
     </div>
   `;
+}
+
+function setButtonLoadingState(button, loading, loadingText = "处理中...") {
+  if (!button) return;
+  if (!button.dataset.originalText) {
+    button.dataset.originalText = button.textContent || "";
+  }
+  button.disabled = !!loading;
+  button.classList.toggle("loading", !!loading);
+  button.textContent = loading ? loadingText : button.dataset.originalText;
 }
 
 function setAdminTabsLoading(text = "正在加载实验列表...") {
@@ -694,6 +707,10 @@ function copyExperimentToNewDraft(experiment) {
   const allowedSet = new Set(safeJsonParse(experiment.allowed_devices_json, ["desktop", "tablet", "mobile"]));
   adminExperimentForm.querySelectorAll("input[name='allowed_devices']").forEach((input) => {
     input.checked = allowedSet.has(input.value);
+  });
+  const browserSet = new Set(safeJsonParse(accessConfig.allowed_browsers, ["chrome", "edge", "firefox", "safari", "wechat", "other"]));
+  adminExperimentForm.querySelectorAll("input[name='allowed_browsers']").forEach((input) => {
+    input.checked = browserSet.has(input.value);
   });
 
   if (sameDeviceSingleAccount) {
@@ -3534,6 +3551,15 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
             <label><input type="checkbox" name="allowed_devices" value="tablet" />平板</label>
             <label><input type="checkbox" name="allowed_devices" value="mobile" />手机</label>
           </fieldset>
+          <fieldset class="checkbox-group" id="adminEditAllowedBrowsers">
+            <legend>允许浏览器平台（在线实验）</legend>
+            <label><input type="checkbox" name="allowed_browsers" value="chrome" />Chrome</label>
+            <label><input type="checkbox" name="allowed_browsers" value="edge" />Edge</label>
+            <label><input type="checkbox" name="allowed_browsers" value="firefox" />Firefox</label>
+            <label><input type="checkbox" name="allowed_browsers" value="safari" />Safari</label>
+            <label><input type="checkbox" name="allowed_browsers" value="wechat" />微信内置浏览器</label>
+            <label><input type="checkbox" name="allowed_browsers" value="other" />其他浏览器</label>
+          </fieldset>
           <label>
             内容简介
             <textarea name="description" rows="3" id="adminEditDescription">${experiment.description || ""}</textarea>
@@ -3609,6 +3635,7 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
   const editAccessControlHint = panel.querySelector("#adminEditAccessControlHint");
   const editTokenScriptHelp = panel.querySelector("#adminEditTokenScriptHelp");
   const editAllowedDevices = panel.querySelector("#adminEditAllowedDevices");
+  const editAllowedBrowsers = panel.querySelector("#adminEditAllowedBrowsers");
   const editSameDeviceSingleAccount = panel.querySelector("#adminEditSameDeviceSingleAccount");
   const editContactPhone = panel.querySelector("#adminEditContactPhone");
   const editDescription = panel.querySelector("#adminEditDescription");
@@ -3657,6 +3684,8 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
     editGithubRepoField?.classList.toggle("hidden", !isOnline);
     editDownloadPolicyField?.classList.toggle("hidden", !(isOnline && (isHosted || isGithub || usingGithub)));
     editAccessControlModeField?.classList.toggle("hidden", !isOnline);
+    editAllowedDevices?.classList.toggle("hidden", !isOnline);
+    editAllowedBrowsers?.classList.toggle("hidden", !isOnline);
     if (!isOnline && editAccessControlMode) {
       editAccessControlMode.value = "none";
     }
@@ -3691,6 +3720,12 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
   if (editAllowedDevices) {
     const allowed = new Set(safeJsonParse(experiment.allowed_devices_json, ["desktop", "tablet", "mobile"]));
     editAllowedDevices.querySelectorAll("input[type='checkbox']").forEach((input) => {
+      input.checked = allowed.has(input.value);
+    });
+  }
+  if (editAllowedBrowsers) {
+    const allowed = new Set(safeJsonParse(accessConfig.allowed_browsers, ["chrome", "edge", "firefox", "safari", "wechat", "other"]));
+    editAllowedBrowsers.querySelectorAll("input[type='checkbox']").forEach((input) => {
       input.checked = allowed.has(input.value);
     });
   }
@@ -3857,6 +3892,7 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
         return;
       }
       const allowedDevices = getCheckedValues(panel, "allowed_devices");
+      const allowedBrowsers = getCheckedValues(panel, "allowed_browsers");
       const githubRepoValue = String(editGithubRepo?.value || "").trim();
       await apiRequest("/admin/experiment/update", {
         method: "POST",
@@ -3875,6 +3911,7 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
           quotas_text: editQuota?.value || "",
           access_control_mode: editAccessControlMode?.value || "none",
           allowed_devices: allowedDevices,
+          allowed_browsers: locationValue === "在线" ? allowedBrowsers : undefined,
           same_device_single_account: editSameDeviceSingleAccount?.checked !== false,
           github_repo: githubRepoValue || null,
           download_policy: editDownloadPolicy?.value || null,
@@ -4043,6 +4080,7 @@ function renderAdminSchedulePreview(slots, participantsMap, container) {
 
 async function loadAdminExperimentList() {
   if (!(state.role === "admin" || state.role === "root")) return;
+  adminParticipantsCache.clear();
   setLoadingBlock(adminExperimentList, "正在加载实验与被试管理列表...");
   try {
     const data = await apiRequest("/admin/experiments", { method: "GET" });
@@ -4056,6 +4094,12 @@ function renderAdminExperimentList(experiments) {
   if (!adminExperimentList) return;
   adminExperimentList.innerHTML = "";
   experiments.forEach((exp) => {
+    const cardState = {
+      expanded: false,
+      batchMode: false,
+      selectedRowKeys: new Set(),
+      rows: [],
+    };
     const card = document.createElement("div");
     card.className = "admin-experiment-card";
     card.innerHTML = `
@@ -4063,16 +4107,62 @@ function renderAdminExperimentList(experiments) {
       <p class="hint">${exp.type} · ${exp.location}</p>
       <button type="button" class="ghost" data-action="download-all">下载完整数据集</button>
       <button type="button" class="ghost" data-action="download-participants">下载被试表</button>
+      <button type="button" class="ghost" data-action="toggle-batch">批量操作</button>
       <button type="button" class="ghost" data-action="toggle">展开参与名单</button>
+      <div class="admin-batch-toolbar hidden">
+        <span class="admin-batch-count">已选中 0 人</span>
+        <button type="button" class="ghost" data-action="batch-download-users" disabled>下载选中数据</button>
+        <button type="button" class="ghost" data-action="batch-reject" disabled>拒绝选中被试</button>
+        <button type="button" class="ghost" data-action="batch-download-participants" disabled>下载选中被试表</button>
+      </div>
       <div class="admin-participant-list hidden"></div>
     `;
     const downloadAllBtn = card.querySelector("[data-action='download-all']");
     const downloadParticipantsBtn = card.querySelector("[data-action='download-participants']");
+    const toggleBatchBtn = card.querySelector("[data-action='toggle-batch']");
     const toggleBtn = card.querySelector("[data-action='toggle']");
+    const batchToolbar = card.querySelector(".admin-batch-toolbar");
+    const batchCount = card.querySelector(".admin-batch-count");
+    const batchDownloadUsersBtn = card.querySelector("[data-action='batch-download-users']");
+    const batchRejectBtn = card.querySelector("[data-action='batch-reject']");
+    const batchDownloadParticipantsBtn = card.querySelector("[data-action='batch-download-participants']");
     const list = card.querySelector(".admin-participant-list");
+
+    const getSelectedRows = () => cardState.rows.filter((row) => cardState.selectedRowKeys.has(row.rowKey));
+    const getSelectedUserUids = () => Array.from(new Set(getSelectedRows().map((row) => String(row.user_uid || "")).filter(Boolean)));
+
+    const updateBatchToolbar = () => {
+      const selectedRows = getSelectedRows();
+      const selectedUsers = getSelectedUserUids();
+      batchToolbar?.classList.toggle("hidden", !cardState.batchMode);
+      list?.classList.toggle("batch-mode", !!cardState.batchMode);
+      if (batchCount) {
+        batchCount.textContent = `已选中 ${selectedRows.length} 条（${selectedUsers.length} 名被试）`;
+      }
+      if (batchDownloadUsersBtn) batchDownloadUsersBtn.disabled = selectedUsers.length === 0;
+      if (batchRejectBtn) batchRejectBtn.disabled = selectedRows.length === 0;
+      if (batchDownloadParticipantsBtn) batchDownloadParticipantsBtn.disabled = selectedUsers.length === 0;
+      if (toggleBatchBtn) {
+        toggleBatchBtn.textContent = cardState.batchMode ? "退出批量" : "批量操作";
+      }
+    };
+
+    const renderList = async (force = false) => {
+      await loadParticipantsForExperiment(exp.experiment_uid, list, {
+        force,
+        batchMode: cardState.batchMode,
+        selectedRowKeys: cardState.selectedRowKeys,
+        onSelectionChange: updateBatchToolbar,
+        onRowsRendered: (rows) => {
+          cardState.rows = Array.isArray(rows) ? rows : [];
+          updateBatchToolbar();
+        },
+      });
+    };
+
     downloadAllBtn?.addEventListener("click", async () => {
       try {
-        downloadAllBtn.disabled = true;
+        setButtonLoadingState(downloadAllBtn, true, "打包中...");
         await downloadApiFile(
           `/admin/experiment/data/download?experiment_uid=${encodeURIComponent(exp.experiment_uid)}`,
           `${exp.experiment_uid}_dataset.tar`
@@ -4080,25 +4170,107 @@ function renderAdminExperimentList(experiments) {
       } catch (error) {
         alert(error.message || "下载失败");
       } finally {
-        downloadAllBtn.disabled = false;
+        setButtonLoadingState(downloadAllBtn, false);
       }
     });
     downloadParticipantsBtn?.addEventListener("click", async () => {
       try {
-        downloadParticipantsBtn.disabled = true;
+        setButtonLoadingState(downloadParticipantsBtn, true, "导出中...");
         await downloadParticipantsCsv(exp.experiment_uid);
       } catch (error) {
         alert(error.message || "下载失败");
       } finally {
-        downloadParticipantsBtn.disabled = false;
+        setButtonLoadingState(downloadParticipantsBtn, false);
       }
     });
+
+    toggleBatchBtn?.addEventListener("click", async () => {
+      cardState.batchMode = !cardState.batchMode;
+      if (!cardState.batchMode) {
+        cardState.selectedRowKeys.clear();
+      }
+      updateBatchToolbar();
+      if (cardState.expanded) {
+        await renderList(false);
+      }
+    });
+
     toggleBtn.addEventListener("click", async () => {
-      list.classList.toggle("hidden");
-      if (!list.classList.contains("hidden")) {
-        await loadParticipantsForExperiment(exp.experiment_uid, list);
+      cardState.expanded = !cardState.expanded;
+      list.classList.toggle("hidden", !cardState.expanded);
+      toggleBtn.textContent = cardState.expanded ? "收起参与名单" : "展开参与名单";
+      if (cardState.expanded) {
+        toggleBtn.disabled = true;
+        toggleBtn.classList.add("loading");
+        try {
+          await renderList(false);
+        } finally {
+          toggleBtn.disabled = false;
+          toggleBtn.classList.remove("loading");
+        }
       }
     });
+
+    batchDownloadUsersBtn?.addEventListener("click", async () => {
+      const selectedUsers = getSelectedUserUids();
+      if (!selectedUsers.length) return;
+      try {
+        setButtonLoadingState(batchDownloadUsersBtn, true, "下载中...");
+        for (const uid of selectedUsers) {
+          await downloadApiFile(
+            `/admin/experiment/data/download-user?experiment_uid=${encodeURIComponent(exp.experiment_uid)}&user_uid=${encodeURIComponent(uid)}`,
+            `${exp.experiment_uid}_${uid}_dataset.tar`
+          );
+        }
+      } catch (error) {
+        alert(error.message || "批量下载失败");
+      } finally {
+        setButtonLoadingState(batchDownloadUsersBtn, false);
+      }
+    });
+
+    batchRejectBtn?.addEventListener("click", async () => {
+      const selectedRows = getSelectedRows();
+      if (!selectedRows.length) return;
+      const reason = prompt("可选：输入本次批量拒绝原因（将应用到所选记录）", "") ?? "";
+      const ok = window.confirm(`确认拒绝所选 ${selectedRows.length} 条报名记录？`);
+      if (!ok) return;
+      try {
+        setButtonLoadingState(batchRejectBtn, true, "处理中...");
+        for (const row of selectedRows) {
+          await apiRequest("/admin/experiment/participant/reject", {
+            method: "POST",
+            json: {
+              experiment_uid: exp.experiment_uid,
+              user_uid: row.user_uid,
+              slot_id: row.slot_id,
+              reason,
+            },
+          });
+        }
+        cardState.selectedRowKeys.clear();
+        await renderList(true);
+      } catch (error) {
+        alert(error.message || "批量拒绝失败");
+      } finally {
+        setButtonLoadingState(batchRejectBtn, false);
+      }
+    });
+
+    batchDownloadParticipantsBtn?.addEventListener("click", async () => {
+      const selectedUsers = getSelectedUserUids();
+      if (!selectedUsers.length) return;
+      try {
+        setButtonLoadingState(batchDownloadParticipantsBtn, true, "导出中...");
+        await downloadParticipantsCsv(exp.experiment_uid, selectedUsers);
+      } catch (error) {
+        alert(error.message || "下载失败");
+      } finally {
+        setButtonLoadingState(batchDownloadParticipantsBtn, false);
+      }
+    });
+
+    updateBatchToolbar();
     adminExperimentList.appendChild(card);
   });
 }
@@ -4119,13 +4291,31 @@ function showTooltip(text, x, y, options = {}) {
   }
 }
 
-async function loadParticipantsForExperiment(experimentUid, list) {
-  setLoadingBlock(list, "正在加载参与名单...");
+async function loadParticipantsForExperiment(experimentUid, list, options = {}) {
+  const force = !!options.force;
+  const batchMode = !!options.batchMode;
+  const selectedRowKeys = options.selectedRowKeys instanceof Set ? options.selectedRowKeys : new Set();
+  const onSelectionChange = typeof options.onSelectionChange === "function" ? options.onSelectionChange : null;
+  const onRowsRendered = typeof options.onRowsRendered === "function" ? options.onRowsRendered : null;
+
+  if (force) {
+    adminParticipantsCache.delete(experimentUid);
+  }
+
+  if (!adminParticipantsCache.has(experimentUid)) {
+    setLoadingBlock(list, "正在加载参与名单...");
+  }
+
   try {
-    const data = await apiRequest(`/admin/experiment?experiment_uid=${encodeURIComponent(experimentUid)}`, {
-      method: "GET",
-    });
+    const data = adminParticipantsCache.has(experimentUid)
+      ? adminParticipantsCache.get(experimentUid)
+      : await apiRequest(`/admin/experiment?experiment_uid=${encodeURIComponent(experimentUid)}`, {
+        method: "GET",
+      });
+    adminParticipantsCache.set(experimentUid, data);
+
     const participants = [];
+    const contactsMap = data?.participants || {};
     const isScheduled = Number(data?.experiment?.schedule_required || 0) === 1;
     const isAccessControlledWithToken = data?.experiment?.access_control_mode === "token" && data?.experiment?.location === "在线";
     (data.slots || []).forEach((slot) => {
@@ -4137,12 +4327,18 @@ async function loadParticipantsForExperiment(experimentUid, list) {
       return;
     }
     participants.reverse();
+    list.classList.toggle("batch-mode", batchMode);
     list.innerHTML = "";
+    const rowMeta = [];
     participants.forEach((participant) => {
+      const rowKey = `${String(participant.user_uid || "")}::${String(participant.slot?.id || "")}`;
+      const contact = contactsMap[String(participant.user_uid || "")] || {};
+      const contactText = `支付宝：${contact.alipay_phone || "-"}\n微信：${contact.wechat || "-"}`;
       const item = document.createElement("div");
       item.className = "admin-participant-item";
       const isRejected = String(participant.participant_status || participant.status || "").toLowerCase() === "rejected" || participant.rejected === true;
       if (isRejected) item.classList.add("rejected");
+      item.title = contactText;
       const startRaw = isScheduled
         ? participant.slot?.start_time
         : (participant.actual_opened_at || participant.participated_at || participant.applied_at || "-");
@@ -4161,6 +4357,7 @@ async function loadParticipantsForExperiment(experimentUid, list) {
         : `<button type="button" class="ghost" data-action="reject">拒绝被试</button>`;
       item.innerHTML = `
         <div class="admin-participant-main">
+          <label class="admin-batch-pick"><input type="checkbox" data-action="select-row" /></label>
           <span class="admin-participant-head">${participant.name} (${participant.user_uid}) ${rejectMeta}</span>
           <span class="admin-participant-time">${timeRangeHtml}</span>
         </div>
@@ -4171,14 +4368,51 @@ async function loadParticipantsForExperiment(experimentUid, list) {
           ${tokenRecoveryButton}
         </div>
       `;
+      const rowCheckbox = item.querySelector("[data-action='select-row']");
+      if (rowCheckbox) {
+        rowCheckbox.checked = selectedRowKeys.has(rowKey);
+        rowCheckbox.addEventListener("change", () => {
+          if (rowCheckbox.checked) selectedRowKeys.add(rowKey);
+          else selectedRowKeys.delete(rowKey);
+          onSelectionChange?.();
+        });
+      }
+
+      let touchTimer = null;
+      item.addEventListener("mouseenter", (event) => {
+        showTooltip(contactText, event.pageX + 8, event.pageY + 8, { durationMs: 0 });
+      });
+      item.addEventListener("mouseleave", () => {
+        removeTooltip();
+      });
+      item.addEventListener("touchstart", (event) => {
+        const touch = event.touches?.[0];
+        if (!touch) return;
+        touchTimer = setTimeout(() => {
+          showTooltip(contactText, touch.clientX + 8, touch.clientY + 8, { durationMs: 1800 });
+        }, 420);
+      }, { passive: true });
+      item.addEventListener("touchend", () => {
+        if (touchTimer) clearTimeout(touchTimer);
+        touchTimer = null;
+      }, { passive: true });
+      item.addEventListener("touchmove", () => {
+        if (touchTimer) clearTimeout(touchTimer);
+        touchTimer = null;
+      }, { passive: true });
+
       item.querySelector("[data-action='download-user']")?.addEventListener("click", async () => {
+        const button = item.querySelector("[data-action='download-user']");
         try {
+          setButtonLoadingState(button, true, "下载中...");
           await downloadApiFile(
             `/admin/experiment/data/download-user?experiment_uid=${encodeURIComponent(experimentUid)}&user_uid=${encodeURIComponent(participant.user_uid)}`,
             `${experimentUid}_${participant.user_uid}_dataset.tar`
           );
         } catch (error) {
           alert(error.message || "下载失败");
+        } finally {
+          setButtonLoadingState(button, false);
         }
       });
       item.querySelector("[data-action='feedback']").addEventListener("click", async () => {
@@ -4203,7 +4437,10 @@ async function loadParticipantsForExperiment(experimentUid, list) {
               reason,
             },
           });
-          await loadParticipantsForExperiment(experimentUid, list);
+          await loadParticipantsForExperiment(experimentUid, list, {
+            ...options,
+            force: true,
+          });
         } catch (error) {
           alert(error.message || "拒绝失败");
         }
@@ -4220,7 +4457,10 @@ async function loadParticipantsForExperiment(experimentUid, list) {
               slot_id: participant.slot?.id,
             },
           });
-          await loadParticipantsForExperiment(experimentUid, list);
+          await loadParticipantsForExperiment(experimentUid, list, {
+            ...options,
+            force: true,
+          });
         } catch (error) {
           alert(error.message || "恢复失败");
         }
@@ -4229,7 +4469,7 @@ async function loadParticipantsForExperiment(experimentUid, list) {
         const ok = window.confirm(`确认恢复 ${participant.name}（${participant.user_uid}）的报名链接访问权限？\n恢复后该被试可重新访问实验链接一次。`);
         if (!ok) return;
         try {
-          await apiRequest("/admin/experiment/participant/recover-token", {
+          const result = await apiRequest("/admin/experiment/participant/recover-token", {
             method: "POST",
             json: {
               experiment_uid: experimentUid,
@@ -4237,14 +4477,31 @@ async function loadParticipantsForExperiment(experimentUid, list) {
               slot_id: participant.slot?.id,
             },
           });
-          setStatus(adminExperimentStatus, `已恢复 ${participant.name} 的报名链接访问权限`);
-          await loadParticipantsForExperiment(experimentUid, list);
+          const copiedLink = result?.access_url || result?.location_link || "";
+          if (copiedLink && navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(copiedLink);
+            setStatus(adminExperimentStatus, `已恢复 ${participant.name} 的报名链接，并复制到剪贴板`);
+          } else {
+            setStatus(adminExperimentStatus, `已恢复 ${participant.name} 的报名链接访问权限`);
+          }
+          await loadParticipantsForExperiment(experimentUid, list, {
+            ...options,
+            force: true,
+          });
         } catch (error) {
           alert(error.message || "恢复链接失败");
         }
       });
       list.appendChild(item);
+
+      rowMeta.push({
+        rowKey,
+        user_uid: String(participant.user_uid || ""),
+        slot_id: participant.slot?.id,
+      });
     });
+    onRowsRendered?.(rowMeta);
+    onSelectionChange?.();
   } catch (error) {
     list.textContent = error.message;
   }
@@ -4883,6 +5140,33 @@ function formatDurationWithUnit(value) {
 async function applyExperiment(exp, selectedSlots) {
   setStatus(experimentStatus, "提交中...");
   try {
+    if (exp.location === "在线") {
+      try {
+        const check = await apiRequest("/experiments/access-check", {
+          method: "POST",
+          json: { experiment_uid: exp.experiment_uid },
+        });
+        if (check?.browser_ok === false) {
+          const browserLabels = {
+            chrome: "Chrome",
+            edge: "Edge",
+            firefox: "Firefox",
+            safari: "Safari",
+            wechat: "微信内置浏览器",
+            other: "其他浏览器",
+          };
+          const current = browserLabels[String(check.browser_type || "")] || "当前浏览器";
+          const allowed = (Array.isArray(check.allowed_browsers) ? check.allowed_browsers : [])
+            .map((key) => browserLabels[String(key)] || String(key))
+            .join("/") || "系统支持浏览器";
+          setStatus(experimentStatus, `当前浏览器（${current}）不支持该实验。请切换至 ${allowed} 后重新登录系统再报名。`, true);
+          return;
+        }
+      } catch {
+        // Access check failure should not block normal apply flow.
+      }
+    }
+
     const slotIds = Array.isArray(selectedSlots)
       ? selectedSlots.map((slot) => slot.id)
       : (selectedSlots?.id ? [selectedSlots.id] : []);
@@ -4935,17 +5219,24 @@ async function applyExperiment(exp, selectedSlots) {
   }
 }
 
-async function downloadParticipantsCsv(experimentUid) {
+async function downloadParticipantsCsv(experimentUid, selectedUserUids = []) {
   const encoded = encodeURIComponent(experimentUid);
+  const selected = Array.isArray(selectedUserUids)
+    ? Array.from(new Set(selectedUserUids.map((uid) => String(uid || "").trim()).filter(Boolean)))
+    : [];
+  const userParam = selected.length
+    ? `&user_uids=${encodeURIComponent(selected.join(","))}`
+    : "";
   const candidates = [
-    `/admin/experiment/participants/export?experiment_uid=${encoded}`,
-    `/admin/experiment/participants/download?experiment_uid=${encoded}`,
-    `/admin/experiment/participant/export?experiment_uid=${encoded}`,
+    `/admin/experiment/participants/export?experiment_uid=${encoded}${userParam}`,
+    `/admin/experiment/participants/download?experiment_uid=${encoded}${userParam}`,
+    `/admin/experiment/participant/export?experiment_uid=${encoded}${userParam}`,
   ];
   let lastError = null;
   for (const path of candidates) {
     try {
-      await downloadApiFile(path, `${experimentUid}_participants.csv`);
+      const suffix = selected.length ? `_selected_${selected.length}` : "";
+      await downloadApiFile(path, `${experimentUid}_participants${suffix}.csv`);
       return;
     } catch (error) {
       lastError = error;
@@ -5172,6 +5463,8 @@ locationSelect?.addEventListener("change", async () => {
   const isCustom = locationSelect.value === "其他";
   locationCustomField?.classList.toggle("hidden", !isCustom);
   accessControlModeField?.classList.toggle("hidden", !isOnline);
+  allowedDevicesField?.classList.toggle("hidden", !isOnline);
+  allowedBrowsersField?.classList.toggle("hidden", !isOnline);
   if (!isOnline && accessControlMode) {
     accessControlMode.value = "none";
   }
@@ -5539,6 +5832,7 @@ adminExperimentForm?.addEventListener("submit", async (event) => {
     const scheduleRequiredValue = payload.schedule_required === "yes";
     const schedulePayload = scheduleRequiredValue ? buildSchedulePayload() : [];
     const allowedDevices = getCheckedValues(adminExperimentForm, "allowed_devices");
+    const allowedBrowsers = getCheckedValues(adminExperimentForm, "allowed_browsers");
     const accessMode = location === "在线" ? (payload.access_control_mode || "none") : "none";
     if ((useHostedUpload || useGithubRepo) && accessMode === "proxy") {
       setStatus(adminExperimentStatus, "在线上传/GitHub模式不支持代理模式", true);
@@ -5561,6 +5855,7 @@ adminExperimentForm?.addEventListener("submit", async (event) => {
       schedule_slots: schedulePayload,
       access_control_mode: accessMode,
       allowed_devices: allowedDevices,
+      allowed_browsers: location === "在线" ? allowedBrowsers : [],
       same_device_single_account: sameDeviceSingleAccount?.checked !== false,
       device_info: navigator.platform || "",
       browser_info: navigator.userAgent || "",
