@@ -4136,6 +4136,7 @@ async function loadParticipantsForExperiment(experimentUid, list) {
       list.textContent = "暂无报名";
       return;
     }
+    participants.reverse();
     list.innerHTML = "";
     participants.forEach((participant) => {
       const item = document.createElement("div");
