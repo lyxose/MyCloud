@@ -1690,7 +1690,24 @@ function getDraftSlotExperimentName(slot) {
   return draftName || "当前新实验";
 }
 
+let tooltipHideTimer = null;
+
+function clearTooltipHideTimer() {
+  if (tooltipHideTimer) {
+    clearTimeout(tooltipHideTimer);
+    tooltipHideTimer = null;
+  }
+}
+
+function scheduleTooltipHide(delayMs = 120) {
+  clearTooltipHideTimer();
+  tooltipHideTimer = setTimeout(() => {
+    removeTooltip();
+  }, delayMs);
+}
+
 function removeTooltip() {
+  clearTooltipHideTimer();
   const existing = document.querySelector(".tooltip");
   if (existing) existing.remove();
 }
@@ -4103,19 +4120,25 @@ function renderAdminExperimentList(experiments) {
     const card = document.createElement("div");
     card.className = "admin-experiment-card";
     card.innerHTML = `
-      <h4>${exp.name}</h4>
-      <p class="hint">${exp.type} · ${exp.location}</p>
-      <button type="button" class="ghost" data-action="download-all">下载完整数据集</button>
-      <button type="button" class="ghost" data-action="download-participants">下载被试表</button>
-      <button type="button" class="ghost" data-action="toggle-batch">批量操作</button>
-      <button type="button" class="ghost" data-action="toggle">展开参与名单</button>
-      <div class="admin-batch-toolbar hidden">
-        <span class="admin-batch-count">已选中 0 人</span>
-        <button type="button" class="ghost" data-action="batch-download-users" disabled>下载选中数据</button>
-        <button type="button" class="ghost" data-action="batch-reject" disabled>拒绝选中被试</button>
-        <button type="button" class="ghost" data-action="batch-download-participants" disabled>下载选中被试表</button>
+      <div class="admin-experiment-head">
+        <h4>${exp.name}</h4>
+        <p class="hint">${exp.type} · ${exp.location}</p>
+        <div class="admin-experiment-actions">
+          <button type="button" class="ghost" data-action="download-all">下载完整数据集</button>
+          <button type="button" class="ghost" data-action="download-participants">下载被试表</button>
+          <button type="button" class="ghost" data-action="toggle-batch">批量操作</button>
+          <button type="button" class="ghost" data-action="toggle">展开参与名单</button>
+        </div>
       </div>
-      <div class="admin-participant-list hidden"></div>
+      <div class="admin-experiment-body">
+        <div class="admin-participant-list hidden"></div>
+        <div class="admin-batch-toolbar hidden">
+          <span class="admin-batch-count">已选中 0 条（0 名被试）</span>
+          <button type="button" class="ghost" data-action="batch-download-users" disabled>下载选中数据</button>
+          <button type="button" class="ghost" data-action="batch-reject" disabled>拒绝选中被试</button>
+          <button type="button" class="ghost" data-action="batch-download-participants" disabled>下载选中被试表</button>
+        </div>
+      </div>
     `;
     const downloadAllBtn = card.querySelector("[data-action='download-all']");
     const downloadParticipantsBtn = card.querySelector("[data-action='download-participants']");
@@ -4134,7 +4157,7 @@ function renderAdminExperimentList(experiments) {
     const updateBatchToolbar = () => {
       const selectedRows = getSelectedRows();
       const selectedUsers = getSelectedUserUids();
-      batchToolbar?.classList.toggle("hidden", !cardState.batchMode);
+      batchToolbar?.classList.toggle("hidden", !(cardState.batchMode && cardState.expanded));
       list?.classList.toggle("batch-mode", !!cardState.batchMode);
       if (batchCount) {
         batchCount.textContent = `已选中 ${selectedRows.length} 条（${selectedUsers.length} 名被试）`;
@@ -4216,12 +4239,10 @@ function renderAdminExperimentList(experiments) {
       if (!selectedUsers.length) return;
       try {
         setButtonLoadingState(batchDownloadUsersBtn, true, "下载中...");
-        for (const uid of selectedUsers) {
-          await downloadApiFile(
-            `/admin/experiment/data/download-user?experiment_uid=${encodeURIComponent(exp.experiment_uid)}&user_uid=${encodeURIComponent(uid)}`,
-            `${exp.experiment_uid}_${uid}_dataset.tar`
-          );
-        }
+        await downloadApiFile(
+          `/admin/experiment/data/download-users?experiment_uid=${encodeURIComponent(exp.experiment_uid)}&user_uids=${encodeURIComponent(selectedUsers.join(","))}`,
+          `${exp.experiment_uid}_selected_${selectedUsers.length}_dataset.tar`
+        );
       } catch (error) {
         alert(error.message || "批量下载失败");
       } finally {
@@ -4278,13 +4299,52 @@ function renderAdminExperimentList(experiments) {
 function showTooltip(text, x, y, options = {}) {
   removeTooltip();
   const tip = document.createElement("div");
-  tip.className = "tooltip";
-  tip.textContent = text;
-  tip.style.left = `${x}px`;
-  tip.style.top = `${y}px`;
+  tip.className = `tooltip${options?.selectable ? " selectable" : ""}`;
+
+  if (options?.selectable) {
+    tip.innerHTML = `
+      <div class="tooltip-title">联系方式</div>
+      <div class="tooltip-body"></div>
+      <div class="tooltip-hint">可拖动选中文字复制，或双击气泡自动复制</div>
+    `;
+    const body = tip.querySelector(".tooltip-body");
+    if (body) body.textContent = String(text || "");
+    tip.addEventListener("dblclick", async () => {
+      try {
+        await navigator.clipboard?.writeText?.(String(text || ""));
+      } catch {
+        // ignore clipboard failures silently
+      }
+    });
+    tip.addEventListener("mouseenter", () => clearTooltipHideTimer());
+    tip.addEventListener("mouseleave", () => scheduleTooltipHide(160));
+  } else {
+    tip.textContent = text;
+  }
+
+  const vx = Number(x || 0) - window.scrollX;
+  const vy = Number(y || 0) - window.scrollY;
+  const maxW = options?.selectable ? 360 : 280;
+  tip.style.maxWidth = `${maxW}px`;
+  tip.style.left = `${Math.max(8, vx)}px`;
+  tip.style.top = `${Math.max(8, vy)}px`;
+  tip.style.position = "fixed";
   document.body.appendChild(tip);
+
+  const rect = tip.getBoundingClientRect();
+  let left = Math.max(8, vx);
+  let top = Math.max(8, vy);
+  if (left + rect.width > window.innerWidth - 8) {
+    left = Math.max(8, window.innerWidth - rect.width - 8);
+  }
+  if (top + rect.height > window.innerHeight - 8) {
+    top = Math.max(8, window.innerHeight - rect.height - 8);
+  }
+  tip.style.left = `${left}px`;
+  tip.style.top = `${top}px`;
+
   const durationMs = Number(options?.durationMs ?? 4000);
-  if (durationMs > 0) {
+  if (durationMs > 0 && !options?.selectable) {
     setTimeout(() => {
       tip.remove();
     }, durationMs);
@@ -4379,17 +4439,24 @@ async function loadParticipantsForExperiment(experimentUid, list, options = {}) 
       }
 
       let touchTimer = null;
-      item.addEventListener("mouseenter", (event) => {
-        showTooltip(contactText, event.pageX + 8, event.pageY + 8, { durationMs: 0 });
+      item.addEventListener("mouseenter", () => {
+        const rect = item.getBoundingClientRect();
+        clearTooltipHideTimer();
+        showTooltip(
+          contactText,
+          rect.right + window.scrollX + 10,
+          rect.top + window.scrollY + 6,
+          { durationMs: 0, selectable: true }
+        );
       });
       item.addEventListener("mouseleave", () => {
-        removeTooltip();
+        scheduleTooltipHide(140);
       });
       item.addEventListener("touchstart", (event) => {
         const touch = event.touches?.[0];
         if (!touch) return;
         touchTimer = setTimeout(() => {
-          showTooltip(contactText, touch.clientX + 8, touch.clientY + 8, { durationMs: 1800 });
+          showTooltip(contactText, touch.clientX + 8, touch.clientY + 8, { durationMs: 2200, selectable: true });
         }, 420);
       }, { passive: true });
       item.addEventListener("touchend", () => {

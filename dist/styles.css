@@ -899,35 +899,68 @@ body.is-admin .split {
   border-radius: 14px;
   border: 1px solid rgba(58, 123, 213, 0.2);
   background: #f7faff;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.admin-experiment-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: #f7faff;
+  border-radius: 10px;
+  padding-bottom: 0.15rem;
 }
 
 .admin-experiment-card h4 {
   margin-bottom: 0.4rem;
 }
 
+.admin-experiment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.admin-experiment-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 230px;
+  gap: 0.65rem;
+  align-items: start;
+}
+
 .admin-participant-list {
-  margin-top: 0.6rem;
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 0.2rem;
+  scrollbar-gutter: stable;
 }
 
 .admin-batch-toolbar {
-  margin-top: 0.6rem;
   padding: 0.55rem 0.65rem;
   background: #edf4ff;
   border: 1px solid rgba(58, 123, 213, 0.22);
   border-radius: 10px;
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 0.45rem;
-  align-items: center;
+  align-items: stretch;
+  position: sticky;
+  top: 0.4rem;
 }
 
 .admin-batch-count {
   font-size: 0.86rem;
   color: #355172;
-  margin-right: 0.25rem;
+  margin-right: 0;
+}
+
+.admin-batch-toolbar .ghost {
+  width: 100%;
 }
 
 .admin-participant-item {
@@ -1012,14 +1045,46 @@ body.is-admin .split {
 }
 
 .tooltip {
-  position: absolute;
-  background: #0f2a4d;
-  color: #ffffff;
-  padding: 0.4rem 0.6rem;
-  border-radius: 8px;
-  font-size: 0.75rem;
-  z-index: 20;
+  position: fixed;
+  background: linear-gradient(180deg, rgba(16, 38, 67, 0.96) 0%, rgba(10, 26, 48, 0.96) 100%);
+  color: #f4f8ff;
+  padding: 0.55rem 0.7rem;
+  border-radius: 12px;
+  border: 1px solid rgba(174, 204, 241, 0.35);
+  box-shadow: 0 14px 26px rgba(11, 32, 61, 0.35);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  z-index: 40;
   white-space: pre-line;
+  max-width: 280px;
+  pointer-events: none;
+}
+
+.tooltip.selectable {
+  pointer-events: auto;
+  user-select: text;
+  cursor: text;
+  max-width: 360px;
+}
+
+.tooltip-title {
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #bdd8ff;
+  margin-bottom: 0.22rem;
+}
+
+.tooltip-body {
+  white-space: pre-line;
+  font-size: 0.84rem;
+  color: #ffffff;
+}
+
+.tooltip-hint {
+  margin-top: 0.3rem;
+  font-size: 0.7rem;
+  color: #b0c8e8;
 }
 
 .slot-action-menu {
@@ -1801,6 +1866,18 @@ body.is-admin .split {
 
   .admin-participant-actions .ghost {
     padding: 0.38rem 0.52rem;
+  }
+
+  .admin-experiment-body {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-participant-list {
+    max-height: 300px;
+  }
+
+  .admin-batch-toolbar {
+    position: static;
   }
 
   .admin-batch-toolbar {
