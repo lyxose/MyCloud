@@ -86,7 +86,16 @@ main {
 
   body.guest-mode #profile #experimentForm .experiment-list {
     flex: 1;
-    min-height: 360px;
+    min-height: 520px;
+    max-height: none;
+  }
+
+  body.guest-mode #profile #experimentForm .primary[disabled] {
+    background: #c6cfdd;
+    color: #6b778a;
+    cursor: not-allowed;
+    box-shadow: none;
+    pointer-events: none;
   }
 
   body.guest-mode #consent {
