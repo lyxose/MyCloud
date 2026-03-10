@@ -39,6 +39,24 @@ main {
   padding: 0 clamp(1rem, 2.2vw, 2rem);
 }
 
+@media (min-width: 980px) {
+  body.guest-mode main {
+    display: grid;
+    grid-template-columns: minmax(340px, 1fr) minmax(420px, 1.15fr);
+    gap: 1.4rem;
+    align-items: start;
+  }
+
+  body.guest-mode #auth,
+  body.guest-mode #profile {
+    margin-bottom: 0;
+  }
+
+  body.guest-mode #consent {
+    grid-column: 1 / -1;
+  }
+}
+
 
 .site-header {
   position: relative;

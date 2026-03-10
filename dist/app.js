@@ -465,6 +465,9 @@ const profileArea = document.getElementById("profileArea");
 const profileName = document.getElementById("profileName");
 const profileUid = document.getElementById("profileUid");
 const profileMeta = document.getElementById("profileMeta");
+const profileCardTitle = document.getElementById("profileCardTitle");
+const profileCardSubtitle = document.getElementById("profileCardSubtitle");
+const experimentPanelTitle = document.getElementById("experimentPanelTitle");
 
 const profileCard = document.getElementById("profile");
 const authCard = document.getElementById("auth");
@@ -472,6 +475,7 @@ const consentSection = document.getElementById("consent");
 const profilePane = document.getElementById("profilePane");
 const profileToggle = document.getElementById("profileToggle");
 const profileSplit = document.querySelector(".split");
+const profileSummary = profileArea?.querySelector(".profile-summary");
 
 const unitInput = document.getElementById("unitInput");
 const unitSuggestions = document.getElementById("unitSuggestions");
@@ -1099,6 +1103,7 @@ function populateProfileForm(profile) {
 
 function renderProfile() {
   if (!state.profile) {
+    document.body.classList.add("guest-mode");
     profileCard.classList.remove("hidden");
     profileEmpty.classList.add("hidden");
     profileArea.classList.remove("hidden");
@@ -1106,10 +1111,14 @@ function renderProfile() {
     adminExperimentsSection?.classList.add("hidden");
     consentSection?.classList.remove("hidden");
     authCard?.classList.remove("hidden");
-    profileArea?.querySelector(".profile-summary")?.classList.add("hidden");
-    profileSplit?.classList.add("hidden");
+    profileSummary?.classList.add("hidden");
+    profileSplit?.classList.remove("hidden");
     profilePane?.classList.add("hidden");
+    experimentForm?.classList.remove("hidden");
     appliedExperimentsPanel?.classList.add("hidden");
+    if (profileCardTitle) profileCardTitle.textContent = "实验预览";
+    if (profileCardSubtitle) profileCardSubtitle.textContent = "登录后系统将根据您的参与记录和个人信息自动筛选可报名实验。";
+    if (experimentPanelTitle) experimentPanelTitle.textContent = "正在招募的实验（登录后可报名）";
     const submitBtn = experimentForm?.querySelector("button[type='submit']");
     if (submitBtn) {
       submitBtn.disabled = true;
@@ -1123,13 +1132,18 @@ function renderProfile() {
     return;
   }
 
+  document.body.classList.remove("guest-mode");
   profileCard.classList.remove("hidden");
   profileEmpty.classList.add("hidden");
   profileArea.classList.remove("hidden");
-  profileArea?.querySelector(".profile-summary")?.classList.remove("hidden");
+  profileSummary?.classList.remove("hidden");
   profileSplit?.classList.remove("hidden");
   profilePane?.classList.remove("hidden");
+  experimentForm?.classList.remove("hidden");
   appliedExperimentsPanel?.classList.remove("hidden");
+  if (profileCardTitle) profileCardTitle.textContent = "个人主页";
+  if (profileCardSubtitle) profileCardSubtitle.textContent = "登录后可更新信息并报名实验。";
+  if (experimentPanelTitle) experimentPanelTitle.textContent = "实验报名";
   const submitBtn = experimentForm?.querySelector("button[type='submit']");
   if (submitBtn) {
     submitBtn.disabled = false;
@@ -1597,6 +1611,7 @@ function addScheduleSlot({ date, startMin, endMin, capacity }) {
     startMin,
     endMin,
     capacity: capacity || 1,
+    locked: false,
   });
 }
 
@@ -3199,6 +3214,7 @@ function renderExperiments() {
     const missingProfilePrompt = isDisabledForMissing ? formatMissingProfilePrompt(exp.eligibility) : "";
     const rewardText = formatRewardWithUnit(exp.reward);
     const durationText = formatDurationWithUnit(exp.duration_min);
+    const locationText = formatExperimentLocationDisplay(exp.location);
     const deviceHint = exp.device_restriction_hint || "";
     const descriptionHtml = exp.description
       ? formatMultilineTextHtml(exp.description)
@@ -3221,6 +3237,7 @@ function renderExperiments() {
       <div class="experiment-card-body">
         <p>${descriptionHtml}</p>
         <p class="hint experiment-meta-line"><span>${rewardText}</span><span class="experiment-meta-right">${durationText}</span></p>
+        <p class="hint">地点：${escapeHtml(locationText)}</p>
         ${deviceHint ? `<p class="notice">⚠️ ${deviceHint}</p>` : ""}
         ${noticeHtml ? `<p class="notice">${noticeHtml}</p>` : ""}
         ${slotHint ? `<p class="hint">${slotHint}</p>` : ""}
@@ -3311,6 +3328,7 @@ function renderAppliedExperiments() {
     const card = document.createElement("div");
     card.className = "experiment-card";
     const contact = item.contact ? `主试联系方式：${item.contact}` : "主试联系方式：-";
+    const locationText = formatExperimentLocationDisplay(item.location);
     const noticeHtml = item.notes ? formatMultilineTextHtml(item.notes) : "";
     const reward = formatRewardWithUnit(item.reward);
     const duration = formatDurationWithUnit(item.durationMin);
@@ -3324,6 +3342,7 @@ function renderAppliedExperiments() {
       <div class="experiment-card-body">
         <p class="hint">预约时间：${item.slotLabel}</p>
         <p class="hint experiment-meta-line"><span>${reward}</span><span class="experiment-meta-right">${duration}</span></p>
+        <p class="hint">地点：${escapeHtml(locationText)}</p>
         ${deviceNotice ? `<p class="notice">${deviceNotice}</p>` : ""}
         ${noticeHtml ? `<p class="notice">${noticeHtml}</p>` : ""}
         <p class="hint">${contact}</p>
@@ -5267,6 +5286,16 @@ function formatDurationWithUnit(value) {
     return `预计时长：${Math.round(numeric)}分钟`;
   }
   return /分钟\s*$/u.test(text) ? `预计时长：${text}` : `预计时长：${text}分钟`;
+}
+
+function formatExperimentLocationDisplay(location) {
+  const raw = String(location || "").trim();
+  if (!raw) return "-";
+  const roomMatch = raw.match(/^604\s*-\s*([1345])$/);
+  if (roomMatch) {
+    return `中科院心理研究所南楼（和谐楼）604-${roomMatch[1]}`;
+  }
+  return raw;
 }
 
 async function applyExperiment(exp, selectedSlots) {
