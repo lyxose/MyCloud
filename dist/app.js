@@ -610,6 +610,25 @@ function safeJsonParse(value, fallback) {
   }
 }
 
+function normalizeAllowedBrowsersValue(value) {
+  const all = ["chrome", "edge", "firefox", "safari", "wechat", "other"];
+  if (Array.isArray(value)) {
+    const filtered = value.map((item) => String(item || "").trim().toLowerCase()).filter((item) => all.includes(item));
+    return filtered.length ? filtered : all;
+  }
+  if (typeof value === "string") {
+    const text = value.trim();
+    if (!text) return all;
+    if (text.startsWith("[") && text.endsWith("]")) {
+      const parsed = safeJsonParse(text, []);
+      return normalizeAllowedBrowsersValue(parsed);
+    }
+    const split = text.split(/[;,，\s]+/).filter(Boolean);
+    return normalizeAllowedBrowsersValue(split);
+  }
+  return all;
+}
+
 function getCheckedValues(form, name) {
   if (!form) return [];
   return Array.from(form.querySelectorAll(`input[name="${name}"]:checked`))
@@ -708,7 +727,7 @@ function copyExperimentToNewDraft(experiment) {
   adminExperimentForm.querySelectorAll("input[name='allowed_devices']").forEach((input) => {
     input.checked = allowedSet.has(input.value);
   });
-  const browserSet = new Set(safeJsonParse(accessConfig.allowed_browsers, ["chrome", "edge", "firefox", "safari", "wechat", "other"]));
+  const browserSet = new Set(normalizeAllowedBrowsersValue(accessConfig.allowed_browsers));
   adminExperimentForm.querySelectorAll("input[name='allowed_browsers']").forEach((input) => {
     input.checked = browserSet.has(input.value);
   });
@@ -3741,7 +3760,7 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
     });
   }
   if (editAllowedBrowsers) {
-    const allowed = new Set(safeJsonParse(accessConfig.allowed_browsers, ["chrome", "edge", "firefox", "safari", "wechat", "other"]));
+    const allowed = new Set(normalizeAllowedBrowsersValue(accessConfig.allowed_browsers));
     editAllowedBrowsers.querySelectorAll("input[type='checkbox']").forEach((input) => {
       input.checked = allowed.has(input.value);
     });
