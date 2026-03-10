@@ -3157,9 +3157,11 @@ function toggleScheduleSlotSelection(exp, slot, slots) {
 
 function formatMissingProfilePrompt(eligibility) {
   const missing = Array.isArray(eligibility?.missing_fields)
-    ? eligibility.missing_fields.map((item) => String(item || "").trim()).filter(Boolean)
+    ? eligibility.missing_fields
+      .map((item) => String(item || "").trim())
+      .filter((item) => item && item !== "参与过" && item !== "参加过")
     : [];
-  if (!missing.length) return "请先完善个人信息，保存后刷新页面方可报名。";
+  if (!missing.length) return "";
   return `请完善以下信息：${missing.join("、")}。完善并保存后刷新页面方可报名。`;
 }
 
@@ -3203,10 +3205,15 @@ function renderExperiments() {
     card.className = "experiment-card";
     card.dataset.experimentUid = exp.experiment_uid;
     const missingProfileInfo = exp.eligibility?.ok !== true && exp.eligibility?.reason_code === "missing_profile_fields";
-    const isDisabledForMissing = missingProfileInfo;
+    const filteredMissingFields = Array.isArray(exp.eligibility?.missing_fields)
+      ? exp.eligibility.missing_fields
+        .map((item) => String(item || "").trim())
+        .filter((item) => item && item !== "参与过" && item !== "参加过")
+      : [];
+    const isDisabledForMissing = missingProfileInfo && filteredMissingFields.length > 0;
     const isSelected = state.selectedExperimentUid === exp.experiment_uid;
     if (isSelected) card.classList.add("selected");
-    const eligibility = exp.eligibility?.ok
+    const eligibility = exp.eligibility?.ok || (missingProfileInfo && filteredMissingFields.length === 0)
       ? ""
       : exp.eligibility?.reason === "您所属分组已满员"
         ? "名额已满"
