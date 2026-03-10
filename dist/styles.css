@@ -47,6 +47,17 @@ main {
     align-items: start;
   }
 
+  body.guest-mode #profile .split {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+    grid-template-areas: "experiment";
+  }
+
+  body.guest-mode #profile #experimentForm {
+    grid-area: experiment;
+    min-width: 0;
+  }
+
   body.guest-mode #auth,
   body.guest-mode #profile {
     margin-bottom: 0;
@@ -1318,6 +1329,8 @@ body.is-admin .split {
   flex: 1;
   max-height: 448px;
   overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
 }
 
 .experiment-panel .primary {
@@ -1333,6 +1346,8 @@ body.is-admin .split {
   flex-direction: column;
   gap: 0.6rem;
   margin-bottom: 0.8rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .experiment-card .notice {
@@ -1533,6 +1548,12 @@ body.is-admin .split {
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
+  min-width: 0;
+}
+
+.experiment-card-header strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .experiment-card-actions {
