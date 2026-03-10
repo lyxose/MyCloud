@@ -458,6 +458,7 @@ const loginStatus = document.getElementById("loginStatus");
 const profileStatus = document.getElementById("profileStatus");
 const experimentStatus = document.getElementById("experimentStatus");
 const appliedExperimentList = document.getElementById("appliedExperimentList");
+const appliedExperimentsPanel = document.getElementById("appliedExperimentsPanel");
 
 const profileEmpty = document.getElementById("profileEmpty");
 const profileArea = document.getElementById("profileArea");
@@ -1098,13 +1099,23 @@ function populateProfileForm(profile) {
 
 function renderProfile() {
   if (!state.profile) {
-    profileCard.classList.add("hidden");
-    profileEmpty.classList.remove("hidden");
-    profileArea.classList.add("hidden");
+    profileCard.classList.remove("hidden");
+    profileEmpty.classList.add("hidden");
+    profileArea.classList.remove("hidden");
     adminArea?.classList.add("hidden");
     adminExperimentsSection?.classList.add("hidden");
     consentSection?.classList.remove("hidden");
     authCard?.classList.remove("hidden");
+    profileArea?.querySelector(".profile-summary")?.classList.add("hidden");
+    profileSplit?.classList.add("hidden");
+    profilePane?.classList.add("hidden");
+    appliedExperimentsPanel?.classList.add("hidden");
+    const submitBtn = experimentForm?.querySelector("button[type='submit']");
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = "登录后可报名";
+    }
+    clearExperimentSelection();
     if (appliedExperimentList) {
       appliedExperimentList.innerHTML = "";
     }
@@ -1115,6 +1126,15 @@ function renderProfile() {
   profileCard.classList.remove("hidden");
   profileEmpty.classList.add("hidden");
   profileArea.classList.remove("hidden");
+  profileArea?.querySelector(".profile-summary")?.classList.remove("hidden");
+  profileSplit?.classList.remove("hidden");
+  profilePane?.classList.remove("hidden");
+  appliedExperimentsPanel?.classList.remove("hidden");
+  const submitBtn = experimentForm?.querySelector("button[type='submit']");
+  if (submitBtn) {
+    submitBtn.disabled = false;
+    submitBtn.textContent = "提交报名";
+  }
   authCard?.classList.add("hidden");
   profileName.textContent = state.profile.name || "";
   profileUid.textContent = `系统内ID: ${state.profile.user_uid}`;
@@ -2863,7 +2883,13 @@ function convertCrossSlotToSchedule(crossSlot) {
 }
 
 async function loadProfile() {
-  if (!state.token) return;
+  if (!state.token) {
+    state.profile = null;
+    state.role = null;
+    renderProfile();
+    await loadExperiments();
+    return;
+  }
   try {
     const data = await apiRequest("/profile", { method: "GET" });
     state.profile = data.profile;
@@ -2888,6 +2914,7 @@ async function loadProfile() {
     state.profile = null;
     state.role = null;
     renderProfile();
+    await loadExperiments();
     if (isSchedulePath()) {
       history.replaceState({}, "", "/");
       closeSchedulePage(false);
@@ -3019,10 +3046,11 @@ function renderMajorSuggestions(query = "") {
 }
 
 async function loadExperiments() {
-  if (!state.token) return;
   const container = experimentForm?.querySelector(".experiment-list");
   setLoadingBlock(container, "正在加载可报名实验...");
-  setLoadingBlock(appliedExperimentList, "正在加载已报名实验...");
+  if (state.profile) {
+    setLoadingBlock(appliedExperimentList, "正在加载已报名实验...");
+  }
   try {
     const data = await apiRequest("/experiments", { method: "GET" });
     state.experiments = data.experiments || [];
@@ -3138,6 +3166,12 @@ function renderExperiments() {
   const container = experimentForm?.querySelector(".experiment-list");
   if (!container) return;
   container.innerHTML = "";
+  if (!state.profile) {
+    const guestHint = document.createElement("p");
+    guestHint.className = "notice";
+    guestHint.textContent = "当前为游客浏览模式：可查看全部可报名实验，登录后可提交报名。";
+    container.appendChild(guestHint);
+  }
   const participation = state.profile?.experiment_participation || {};
   if (!state.experiments.length) {
     const empty = document.createElement("p");
@@ -3175,9 +3209,10 @@ function renderExperiments() {
     const slotHint = exp.schedule_required
       ? formatSlotRequirementHint(exp.schedule_slots_required || "=1")
       : "";
+    const isGuest = !state.profile;
     const actionHtml = exp.schedule_required
-      ? `<button type="button" class="ghost" data-action="detail" ${isDisabledForMissing ? "disabled" : ""}>查看详情</button>`
-      : `<button type="button" class="primary" data-action="select" ${isDisabledForMissing ? "disabled" : ""}>${isDisabledForMissing ? "需完善信息" : (isSelected ? "已选中" : "选中")}</button>`;
+      ? `<button type="button" class="ghost" data-action="detail" ${(isDisabledForMissing || isGuest) ? "disabled" : ""}>${isGuest ? "登录后查看详情" : "查看详情"}</button>`
+      : `<button type="button" class="primary" data-action="select" ${(isDisabledForMissing || isGuest) ? "disabled" : ""}>${isGuest ? "登录后可报名" : (isDisabledForMissing ? "需完善信息" : (isSelected ? "已选中" : "选中"))}</button>`;
     card.innerHTML = `
       <div class="experiment-card-header">
         <strong>${exp.name}</strong>
@@ -5995,6 +6030,16 @@ experimentForm.addEventListener("submit", async (event) => {
     submitBtn.disabled = true;
     submitBtn.classList.add("loading");
   }
+  if (!state.profile) {
+    setStatus(experimentStatus, "请先注册或登录后再报名。", true);
+    toggleTab("login");
+    authCard?.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.classList.remove("loading");
+    }
+    return;
+  }
   if (!state.selectedExperimentUid) {
     setStatus(experimentStatus, "请先选中实验", true);
     if (submitBtn) {
@@ -6059,8 +6104,10 @@ logoutBtn.addEventListener("click", async () => {
   state.role = null;
   state.experiments = [];
   state.adminExperiments = [];
+  clearExperimentSelection();
   closeSchedulePage(false);
   renderProfile();
+  await loadExperiments();
 });
 
 initTokenScriptHelp();
