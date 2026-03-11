@@ -2590,10 +2590,19 @@ function renderAdminEditScheduleGrid() {
         slotEl.style.top = `${slot.startMin * PX_PER_MIN}px`;
         slotEl.style.height = `${(slot.endMin - slot.startMin) * PX_PER_MIN}px`;
         slotEl.dataset.id = slot.id;
+        const participantNames = (slot.participants || [])
+          .map((p) => String(p?.name || "").trim())
+          .filter(Boolean)
+          .join("、");
+        const participantContacts = (slot.participants || [])
+          .map((p) => {
+            const info = adminEditState.participants?.[p.user_uid] || {};
+            return `${p.name || "-"} ${info.alipay_phone || "-"} ${info.wechat || "-"}`;
+          })
+          .join("\n");
         if (slot.locked) {
           let displayText;
           // 优先显示被试名字，无论sourceType如何
-          const participantNames = (slot.participants || []).map((p) => p.name).join("、");
           if (participantNames) {
             displayText = participantNames;
           } else if (slot.sourceType) {
@@ -2616,12 +2625,13 @@ function renderAdminEditScheduleGrid() {
             <div class="slot-count">${displayText}</div>
           `;
         } else {
+          const countText = participantNames || `${slot.capacity}人`;
           slotEl.innerHTML = `
             <div class="slot-time">
               <span class="slot-time-start">${formatMinutes(slot.startMin)}</span>
               <span class="slot-time-end">${formatMinutes(slot.endMin)}</span>
             </div>
-            <div class="slot-count">${slot.capacity}人</div>
+            <div class="slot-count">${countText}</div>
             <div class="slot-handle top">▲</div>
             <div class="slot-handle bottom">▼</div>
           `;
@@ -2630,14 +2640,8 @@ function renderAdminEditScheduleGrid() {
         slotEl.addEventListener("click", (event) => {
           event.stopPropagation();
           if (slot.locked) {
-            const contacts = (slot.participants || [])
-              .map((p) => {
-                const info = adminEditState.participants?.[p.user_uid] || {};
-                return `${p.name} ${info.alipay_phone || "-"} ${info.wechat || "-"}`;
-              })
-              .join("\n");
-            if (contacts) {
-              showTooltip(contacts, event.pageX + 8, event.pageY + 8);
+            if (participantContacts) {
+              showTooltip(participantContacts, event.pageX + 8, event.pageY + 8);
             }
             return;
           }
@@ -2648,6 +2652,37 @@ function renderAdminEditScheduleGrid() {
           }
           renderAdminEditScheduleGrid();
         }, { passive: true });
+
+        if (participantContacts) {
+          slotEl.addEventListener("contextmenu", (event) => {
+            event.preventDefault();
+            showTooltip(participantContacts, event.pageX + 8, event.pageY + 8, { durationMs: 0 });
+          });
+          slotEl.addEventListener("mouseenter", (event) => {
+            showTooltip(participantContacts, event.pageX + 8, event.pageY + 8, { durationMs: 0 });
+          });
+          slotEl.addEventListener("mouseleave", () => {
+            removeTooltip();
+          });
+          let contactTouchTimer = null;
+          slotEl.addEventListener("touchstart", (event) => {
+            if (!event.touches || event.touches.length !== 1) return;
+            contactTouchTimer = setTimeout(() => {
+              const touch = event.changedTouches?.[0] || event.touches?.[0];
+              if (touch) {
+                showTooltip(participantContacts, touch.pageX + 8, touch.pageY + 8, { durationMs: 1600 });
+              }
+            }, 520);
+          }, { passive: true });
+          const clearContactTouchTimer = () => {
+            if (!contactTouchTimer) return;
+            clearTimeout(contactTouchTimer);
+            contactTouchTimer = null;
+          };
+          slotEl.addEventListener("touchend", clearContactTouchTimer, { passive: true });
+          slotEl.addEventListener("touchmove", clearContactTouchTimer, { passive: true });
+          slotEl.addEventListener("touchcancel", clearContactTouchTimer, { passive: true });
+        }
 
         const deleteSlot = () => {
           if (slot.locked) return;
@@ -2911,17 +2946,19 @@ async function loadProfile() {
     state.role = data.profile.role;
     renderProfile();
     await loadExperiments();
-    if (state.role === "admin" || state.role === "root") {
-      await loadAdminExperiments();
-      await loadAdminExperimentList();
-    }
     if (isSchedulePath()) {
       if (state.role === "admin" || state.role === "root") {
         await openSchedulePage(false);
+        return;
       } else {
         history.replaceState({}, "", "/");
         closeSchedulePage(false);
+        return;
       }
+    }
+    if (state.role === "admin" || state.role === "root") {
+      await loadAdminExperiments();
+      await loadAdminExperimentList();
     }
   } catch (error) {
     localStorage.removeItem("subjinfo_token");
@@ -3424,19 +3461,97 @@ function renderAdminTabs() {
     const capacity = exp.capacity_total ?? 0;
     tab.title = `ID: ${exp.experiment_uid}\n类型: ${exp.type}\n已招募: ${recruited}/${capacity}\n最后修改: ${updatedLabel}`;
     tab.addEventListener("click", () => selectAdminTab(exp.experiment_uid));
+    const openExperimentMenu = (x, y) => {
+      const actions = [
+        {
+          label: "复制实验设定到新实验",
+          onClick: () => {
+            copyExperimentToNewDraft(exp);
+          },
+        },
+        {
+          label: exp.status === "paused" ? "继续招募" : "暂停收集",
+          onClick: async () => {
+            try {
+              await apiRequest("/admin/experiment/pause", {
+                method: "POST",
+                json: { experiment_uid: exp.experiment_uid, paused: exp.status !== "paused" },
+              });
+              await loadAdminExperiments();
+              await loadAdminExperimentList();
+              if (state.adminActiveTab === exp.experiment_uid) {
+                await loadAdminExperimentDetail(exp.experiment_uid);
+              }
+            } catch (error) {
+              setStatus(adminExperimentStatus, error.message, true);
+            }
+          },
+        },
+        {
+          label: "删除实验",
+          danger: true,
+          onClick: async () => {
+            const confirmMsg = "确认删除此实验？\n\n删除后不可恢复，实验将不再可见，且无法恢复招募。\n\n是否继续？";
+            if (!window.confirm(confirmMsg)) return;
+            try {
+              await apiRequest("/admin/experiment/delete", {
+                method: "POST",
+                json: { experiment_uid: exp.experiment_uid },
+              });
+              state.adminActiveTab = "new";
+              await loadAdminExperiments();
+              await loadAdminExperimentList();
+              selectAdminTab("new");
+            } catch (error) {
+              setStatus(adminExperimentStatus, error.message, true);
+            }
+          },
+        },
+      ];
+
+      if (state.role === "root") {
+        actions.push({
+          label: "转移实验归属",
+          onClick: async () => {
+            const target = String(prompt("输入目标主试ID（如 U000123）", "") || "").trim().toUpperCase();
+            if (!/^U\d{6}$/.test(target)) {
+              setStatus(adminExperimentStatus, "目标主试ID格式应为 U000123", true);
+              return;
+            }
+            try {
+              await apiRequest("/admin/experiment/transfer-owner", {
+                method: "POST",
+                json: {
+                  experiment_uid: exp.experiment_uid,
+                  target_user_uid: target,
+                },
+              });
+              setStatus(adminExperimentStatus, `已将实验归属转移至 ${target}`);
+              await loadAdminExperiments();
+              await loadAdminExperimentList();
+              if (state.adminActiveTab === exp.experiment_uid) {
+                await loadAdminExperimentDetail(exp.experiment_uid);
+              }
+            } catch (error) {
+              setStatus(adminExperimentStatus, error.message, true);
+            }
+          },
+        });
+      }
+
+      openSlotActionMenu(x, y, actions, `实验：${exp.name}`);
+    };
+
     tab.addEventListener("contextmenu", (event) => {
       event.preventDefault();
-      const ok = window.confirm(`复制实验「${exp.name}」配置到“新实验”？\n（不会复制排期）`);
-      if (!ok) return;
-      copyExperimentToNewDraft(exp);
+      openExperimentMenu(event.pageX, event.pageY);
     });
     let longPressTimer = null;
-    tab.addEventListener("touchstart", () => {
+    tab.addEventListener("touchstart", (event) => {
       longPressTimer = setTimeout(() => {
         longPressTimer = null;
-        const ok = window.confirm(`复制实验「${exp.name}」配置到“新实验”？\n（不会复制排期）`);
-        if (!ok) return;
-        copyExperimentToNewDraft(exp);
+        const touch = event.changedTouches?.[0] || event.touches?.[0];
+        openExperimentMenu(touch?.pageX || 24, touch?.pageY || 24);
       }, 650);
     }, { passive: true });
     const clearLongPress = () => {
@@ -3518,7 +3633,7 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
       <div class="hosted-assets-card" id="adminHostedAssetsCard">
         <div class="hosted-assets-row">
           <strong>在线实验文件</strong>
-          <span class="hint" id="adminHostedAssetsMeta">统计中...</span>
+          <span class="hint" id="adminHostedAssetsMeta">按需加载（点击下载或重新上传时读取）</span>
         </div>
         <div class="hosted-assets-actions" style="margin-top:0.6rem;">
           <button type="button" class="ghost" id="adminHostedDownloadBtn">下载完整实验文件</button>
@@ -3839,20 +3954,17 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
     editLocation.classList.add("readonly-field");
   }
 
-  if (isHosted && accessConfig.asset_prefix && hostedMeta) {
-    getHostedUploadSummary(accessConfig.asset_prefix)
-      .then((summary) => {
-        hostedMeta.textContent = `${summary.file_count || 0} 个文件 · ${formatBytes(summary.total_bytes || 0)}`;
-      })
-      .catch(() => {
-        hostedMeta.textContent = "统计失败";
-      });
-  }
-
   hostedDownloadBtn?.addEventListener("click", async () => {
     if (!isHosted || !accessConfig.asset_prefix) return;
     try {
       hostedDownloadBtn.disabled = true;
+      if (hostedMeta) hostedMeta.textContent = "正在读取文件信息...";
+      try {
+        const summary = await getHostedUploadSummary(accessConfig.asset_prefix);
+        if (hostedMeta) hostedMeta.textContent = `${summary.file_count || 0} 个文件 · ${formatBytes(summary.total_bytes || 0)}`;
+      } catch {
+        if (hostedMeta) hostedMeta.textContent = "读取失败";
+      }
       await downloadApiFile(
         `/admin/experiment/upload/archive?prefix=${encodeURIComponent(accessConfig.asset_prefix)}`,
         `${experiment.experiment_uid}_assets.tar`
@@ -4107,7 +4219,7 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
           schedule_slots: buildAdminSchedulePayload(),
         },
       });
-      setStatus(adminExperimentStatus, "排期已保存");
+      setStatus(adminExperimentStatus, "排期已保存。与已预约冲突的待预约时段将自动对被试隐藏。", false);
       adminScheduleState.activeSlotIds.clear();
       await loadAdminExperimentDetail(experiment.experiment_uid);
     } catch (error) {
@@ -5115,7 +5227,7 @@ async function saveUnifiedScheduleChanges() {
     });
     unifiedScheduleState.activeSlotIds.clear();
     await loadUnifiedSchedules();
-    setStatus(unifiedScheduleStatus, "保存成功", false);
+    setStatus(unifiedScheduleStatus, "保存成功。与已预约冲突的待预约时段将自动对被试隐藏。", false);
   } catch (error) {
     setStatus(unifiedScheduleStatus, error.message || "保存失败", true);
   } finally {
@@ -6154,7 +6266,6 @@ if (locationSelect?.value !== "在线") {
 }
 
 if (isSchedulePath() && !state.token) {
-  history.replaceState({}, "", "/");
   closeSchedulePage(false);
 }
 
