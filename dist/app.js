@@ -561,6 +561,7 @@ const unifiedScheduleToday = document.getElementById("unifiedScheduleToday");
 const unifiedScheduleNext = document.getElementById("unifiedScheduleNext");
 const unifiedScheduleUp = document.getElementById("unifiedScheduleUp");
 const unifiedScheduleDown = document.getElementById("unifiedScheduleDown");
+const unifiedScheduleRefresh = document.getElementById("unifiedScheduleRefresh");
 const unifiedScheduleSave = document.getElementById("unifiedScheduleSave");
 
 const VIEW_START_DEFAULT = 9 * 60;
@@ -1104,6 +1105,7 @@ function populateProfileForm(profile) {
 function renderProfile() {
   if (!state.profile) {
     document.body.classList.add("guest-mode");
+    document.body.classList.remove("is-admin");
     profileCard.classList.remove("hidden");
     profileEmpty.classList.add("hidden");
     profileArea.classList.remove("hidden");
@@ -1116,6 +1118,9 @@ function renderProfile() {
     profilePane?.classList.add("hidden");
     experimentForm?.classList.remove("hidden");
     appliedExperimentsPanel?.classList.add("hidden");
+    contactPanel?.classList.add("hidden");
+    passwordPanel?.classList.add("hidden");
+    rootGrantPanel?.classList.add("hidden");
     if (profileCardTitle) profileCardTitle.textContent = "实验预览";
     if (profileCardSubtitle) profileCardSubtitle.textContent = "登录后系统将根据您的参与记录和个人信息自动筛选可报名实验。";
     if (experimentPanelTitle) experimentPanelTitle.textContent = "正在招募的实验（登录后可报名）";
@@ -1392,6 +1397,7 @@ function attachAdminScheduleResizeObserver(container) {
 
 function renderScheduleGrid() {
   if (!scheduleGrid) return;
+  const pageScroll = snapshotPageScroll();
   const prevDays = scheduleGrid.querySelector(".schedule-days");
   if (prevDays) scheduleScrollState.schedule = prevDays.scrollLeft;
   scheduleGrid.innerHTML = "";
@@ -1594,6 +1600,7 @@ function renderScheduleGrid() {
     dayEl.appendChild(body);
     daysContainer.appendChild(dayEl);
   });
+  restorePageScrollStable(pageScroll);
 }
 
 function addScheduleSlot({ date, startMin, endMin, capacity }) {
@@ -1683,7 +1690,11 @@ function unlockPageScrollForNudge() {
 function closeSlotActionMenu() {
   if (!slotActionMenu) return;
   if (slotActionMenuCloseHandler) {
+    document.removeEventListener("pointerdown", slotActionMenuCloseHandler, true);
     document.removeEventListener("touchstart", slotActionMenuCloseHandler);
+    document.removeEventListener("contextmenu", slotActionMenuCloseHandler, true);
+    window.removeEventListener("scroll", closeSlotActionMenu, true);
+    window.removeEventListener("resize", closeSlotActionMenu);
     slotActionMenuCloseHandler = null;
   }
   slotActionMenu.remove();
@@ -1711,14 +1722,37 @@ function openSlotActionMenu(x, y, actions, titleText = "") {
     });
     menu.appendChild(btn);
   });
-  menu.style.left = `${Math.min(x, window.innerWidth - 160)}px`;
-  menu.style.top = `${Math.min(y, window.innerHeight - 160)}px`;
+  menu.style.left = "8px";
+  menu.style.top = "8px";
   document.body.appendChild(menu);
+  const rect = menu.getBoundingClientRect();
+  const left = Math.max(8, Math.min(Number(x || 0), window.innerWidth - rect.width - 8));
+  const top = Math.max(8, Math.min(Number(y || 0), window.innerHeight - rect.height - 8));
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
   slotActionMenu = menu;
   slotActionMenuCloseHandler = (event) => {
     if (!menu.contains(event.target)) closeSlotActionMenu();
   };
+  document.addEventListener("pointerdown", slotActionMenuCloseHandler, true);
   document.addEventListener("touchstart", slotActionMenuCloseHandler, { passive: true });
+  document.addEventListener("contextmenu", slotActionMenuCloseHandler, true);
+  window.addEventListener("scroll", closeSlotActionMenu, true);
+  window.addEventListener("resize", closeSlotActionMenu);
+}
+
+function snapshotPageScroll() {
+  return { x: window.scrollX, y: window.scrollY };
+}
+
+function restorePageScroll(snapshot) {
+  if (!snapshot) return;
+  window.scrollTo(snapshot.x, snapshot.y);
+}
+
+function restorePageScrollStable(snapshot) {
+  restorePageScroll(snapshot);
+  requestAnimationFrame(() => restorePageScroll(snapshot));
 }
 
 function getUnifiedSlotExperimentName(slot) {
@@ -2439,6 +2473,7 @@ async function syncNewExperimentReferenceSchedule(force = false) {
 const scheduleScrollState = {
   schedule: 0,
   admin: 0,
+  unified: 0,
 };
 
 const adminScheduleState = {
@@ -2457,6 +2492,7 @@ const adminScheduleState = {
 function renderAdminEditScheduleGrid() {
   const container = document.getElementById("adminEditScheduleGrid");
   if (!container) return;
+  const pageScroll = snapshotPageScroll();
   attachAdminScheduleResizeObserver(container);
   const prevDays = container.querySelector(".schedule-days");
   if (prevDays) scheduleScrollState.admin = prevDays.scrollLeft;
@@ -2640,8 +2676,8 @@ function renderAdminEditScheduleGrid() {
         slotEl.addEventListener("click", (event) => {
           event.stopPropagation();
           if (slot.locked) {
-            if (participantContacts) {
-              showTooltip(participantContacts, event.pageX + 8, event.pageY + 8);
+            if (participantContacts && !slot.sourceType) {
+              showTooltip(participantContacts, event.clientX + 8, event.clientY + 8, { durationMs: 0, selectable: true });
             }
             return;
           }
@@ -2656,21 +2692,25 @@ function renderAdminEditScheduleGrid() {
         if (participantContacts) {
           slotEl.addEventListener("contextmenu", (event) => {
             event.preventDefault();
-            showTooltip(participantContacts, event.pageX + 8, event.pageY + 8, { durationMs: 0 });
+            event.stopPropagation();
+            if (slot.sourceType) return;
+            showTooltip(participantContacts, event.clientX + 8, event.clientY + 8, { durationMs: 0, selectable: true });
           });
-          slotEl.addEventListener("mouseenter", (event) => {
-            showTooltip(participantContacts, event.pageX + 8, event.pageY + 8, { durationMs: 0 });
-          });
-          slotEl.addEventListener("mouseleave", () => {
-            removeTooltip();
-          });
+          if (!slot.sourceType) {
+            slotEl.addEventListener("mouseenter", (event) => {
+              showTooltip(participantContacts, event.clientX + 8, event.clientY + 8, { durationMs: 0, selectable: true });
+            });
+            slotEl.addEventListener("mouseleave", () => {
+              scheduleTooltipHide(180);
+            });
+          }
           let contactTouchTimer = null;
           slotEl.addEventListener("touchstart", (event) => {
             if (!event.touches || event.touches.length !== 1) return;
             contactTouchTimer = setTimeout(() => {
               const touch = event.changedTouches?.[0] || event.touches?.[0];
-              if (touch) {
-                showTooltip(participantContacts, touch.pageX + 8, touch.pageY + 8, { durationMs: 1600 });
+              if (touch && !slot.sourceType) {
+                showTooltip(participantContacts, touch.clientX + 8, touch.clientY + 8, { durationMs: 2200, selectable: true });
               }
             }, 520);
           }, { passive: true });
@@ -2712,7 +2752,9 @@ function renderAdminEditScheduleGrid() {
             showTooltip(contacts, touch.clientX + 8, touch.clientY + 8);
           }
         };
-        bindSlotOwnershipTooltip(slotEl, slot, getAdminSlotExperimentName);
+        if (slot.sourceType) {
+          bindSlotOwnershipTooltip(slotEl, slot, getAdminSlotExperimentName);
+        }
         attachMobileSlotHandlers(
           slotEl,
           slot,
@@ -2726,6 +2768,7 @@ function renderAdminEditScheduleGrid() {
 
         if (!slot.locked) {
           const confirmSavedEditStart = (event) => {
+            if (event.button !== undefined && event.button !== 0) return;
             const isPersisted = String(slot.id || "").startsWith("existing_") || Number.isFinite(Number(slot.originalId));
             if (!isPersisted || adminScheduleState.activeSlotIds.has(slot.id)) return;
             const hasBookedParticipants = Array.isArray(slot.participants) && slot.participants.length > 0;
@@ -2755,6 +2798,7 @@ function renderAdminEditScheduleGrid() {
     dayEl.appendChild(body);
     daysContainer.appendChild(dayEl);
   });
+  restorePageScrollStable(pageScroll);
 }
 
 function addAdminScheduleSlot({ date, startMin, endMin, capacity }) {
@@ -3544,14 +3588,14 @@ function renderAdminTabs() {
 
     tab.addEventListener("contextmenu", (event) => {
       event.preventDefault();
-      openExperimentMenu(event.pageX, event.pageY);
+      openExperimentMenu(event.clientX, event.clientY);
     });
     let longPressTimer = null;
     tab.addEventListener("touchstart", (event) => {
       longPressTimer = setTimeout(() => {
         longPressTimer = null;
         const touch = event.changedTouches?.[0] || event.touches?.[0];
-        openExperimentMenu(touch?.pageX || 24, touch?.pageY || 24);
+        openExperimentMenu(touch?.clientX || 24, touch?.clientY || 24);
       }, 650);
     }, { passive: true });
     const clearLongPress = () => {
@@ -4311,12 +4355,13 @@ function renderAdminExperimentList(experiments) {
     };
     const card = document.createElement("div");
     card.className = "admin-experiment-card";
+    const showDatasetDownload = String(exp.location || "").trim() === "在线";
     card.innerHTML = `
       <div class="admin-experiment-head">
         <h4>${exp.name}</h4>
         <p class="hint">${exp.type} · ${exp.location}</p>
         <div class="admin-experiment-actions">
-          <button type="button" class="ghost" data-action="download-all">下载完整数据集</button>
+          ${showDatasetDownload ? '<button type="button" class="ghost" data-action="download-all">下载完整数据集</button>' : ''}
           <button type="button" class="ghost" data-action="download-participants">下载被试表</button>
           <button type="button" class="ghost" data-action="toggle-batch">批量操作</button>
           <button type="button" class="ghost" data-action="toggle">展开参与名单</button>
@@ -4908,7 +4953,7 @@ function buildUnifiedSaveOperations() {
   return operations;
 }
 
-async function loadUnifiedSchedules() {
+async function loadUnifiedSchedules(preferredLocation = unifiedScheduleState.currentLocation) {
   if (!(state.role === "admin" || state.role === "root")) return;
   setStatus(unifiedScheduleStatus, "正在加载统一排期表...", false);
   try {
@@ -4921,7 +4966,9 @@ async function loadUnifiedSchedules() {
     if (!unifiedScheduleState.locations.length) {
       unifiedScheduleState.locations = ["604-1", "604-3", "604-4", "604-5"];
     }
-    if (!unifiedScheduleState.currentLocation || !unifiedScheduleState.locations.includes(unifiedScheduleState.currentLocation)) {
+    if (preferredLocation && unifiedScheduleState.locations.includes(preferredLocation)) {
+      unifiedScheduleState.currentLocation = preferredLocation;
+    } else if (!unifiedScheduleState.currentLocation || !unifiedScheduleState.locations.includes(unifiedScheduleState.currentLocation)) {
       unifiedScheduleState.currentLocation = unifiedScheduleState.locations[0];
     }
     unifiedScheduleState.selectedIds.clear();
@@ -4943,10 +4990,9 @@ function renderUnifiedScheduleLocationTabs() {
     tab.className = "mini-tab";
     tab.textContent = location;
     tab.classList.toggle("active", location === unifiedScheduleState.currentLocation);
-    tab.addEventListener("click", () => {
+    tab.addEventListener("click", async () => {
       unifiedScheduleState.currentLocation = location;
-      renderUnifiedScheduleLocationTabs();
-      renderUnifiedScheduleGrid();
+      await loadUnifiedSchedules(location);
     });
     unifiedScheduleLocationTabs.appendChild(tab);
   });
@@ -4954,6 +5000,9 @@ function renderUnifiedScheduleLocationTabs() {
 
 function renderUnifiedScheduleGrid() {
   if (!unifiedScheduleGrid) return;
+  const pageScroll = snapshotPageScroll();
+  const prevDays = unifiedScheduleGrid.querySelector(".schedule-days");
+  if (prevDays) scheduleScrollState.unified = prevDays.scrollLeft;
   unifiedScheduleGrid.innerHTML = "";
   let dayCount = getDayColumnCount(unifiedScheduleGrid);
   if (unifiedScheduleGrid.clientWidth < 200) {
@@ -4979,6 +5028,10 @@ function renderUnifiedScheduleGrid() {
   daysContainer.style.gridTemplateColumns = `repeat(${dayCount}, minmax(92px, 1fr))`;
   unifiedScheduleGrid.appendChild(timeColumn);
   unifiedScheduleGrid.appendChild(daysContainer);
+  daysContainer.scrollLeft = scheduleScrollState.unified;
+  daysContainer.addEventListener("scroll", () => {
+    scheduleScrollState.unified = daysContainer.scrollLeft;
+  }, { passive: true });
 
   const currentLocation = unifiedScheduleState.currentLocation;
   const locationSlots = unifiedScheduleState.slots.filter((slot) => slot.location === currentLocation);
@@ -5088,6 +5141,7 @@ function renderUnifiedScheduleGrid() {
         `;
 
         const confirmEditStart = (event) => {
+          if (event.button !== undefined && event.button !== 0) return;
           if (!slot.can_edit) return;
           if (!slot.persisted || unifiedScheduleState.activeSlotIds.has(slot.id)) return;
           const ok = window.confirm("确认开始修改该已保存预约时间块？");
@@ -5168,6 +5222,7 @@ function renderUnifiedScheduleGrid() {
   if (!locationSlots.length) {
     setStatus(unifiedScheduleStatus, `当前地点 ${currentLocation} 暂无已预约时间块`, false);
   }
+  restorePageScrollStable(pageScroll);
 }
 
 function isSchedulePath() {
@@ -5210,6 +5265,20 @@ function closeSchedulePage(pushHistory = true) {
     history.pushState({}, "", "/");
   }
   setSchedulePageMode(false);
+}
+
+async function restoreAdminHomeStateAfterSchedule() {
+  if (!(state.role === "admin" || state.role === "root")) return;
+  if (!state.adminExperiments.length) {
+    await loadAdminExperiments();
+  }
+  const tabsCount = adminTabs?.querySelectorAll(".tab")?.length || 0;
+  if (tabsCount <= 1) {
+    await loadAdminExperiments();
+  }
+  if (!adminExperimentList?.children?.length) {
+    await loadAdminExperimentList();
+  }
 }
 
 async function saveUnifiedScheduleChanges() {
@@ -5610,6 +5679,7 @@ schedulePageBtn?.addEventListener("click", async () => {
 
 schedulePageBackBtn?.addEventListener("click", () => {
   closeSchedulePage();
+  void restoreAdminHomeStateAfterSchedule();
 });
 
 unifiedSchedulePrev?.addEventListener("click", () => {
@@ -5652,6 +5722,10 @@ unifiedScheduleUp?.addEventListener("click", () => {
 
 unifiedScheduleDown?.addEventListener("click", () => {
   shiftViewWindow(unifiedScheduleState, VIEW_STEP_MIN, renderUnifiedScheduleGrid);
+});
+
+unifiedScheduleRefresh?.addEventListener("click", async () => {
+  await loadUnifiedSchedules(unifiedScheduleState.currentLocation);
 });
 
 unifiedScheduleSave?.addEventListener("click", async () => {
@@ -5860,8 +5934,20 @@ document.addEventListener("keydown", (event) => {
   if (adminArea?.classList.contains("hidden")) return;
   const hasAdminSelection = adminScheduleState.selectedIds.size > 0;
   const hasNewSelection = scheduleState.selectedIds.size > 0;
+  const hasUnifiedSelection = !schedulePage?.classList.contains("hidden") && unifiedScheduleState.selectedIds.size > 0;
   if (event.key === "Delete") {
-    if (hasAdminSelection) {
+    if (hasUnifiedSelection) {
+      event.preventDefault();
+      unifiedScheduleState.slots = unifiedScheduleState.slots.filter((slot) => {
+        if (!unifiedScheduleState.selectedIds.has(slot.id)) return true;
+        return !slot.can_edit;
+      });
+      unifiedScheduleState.selectedIds = new Set(
+        Array.from(unifiedScheduleState.selectedIds).filter((id) => unifiedScheduleState.slots.some((slot) => slot.id === id))
+      );
+      unifiedScheduleState.dirty = true;
+      renderUnifiedScheduleGrid();
+    } else if (hasAdminSelection) {
       deleteAdminSelectedSlots();
     } else {
       deleteSelectedSlots();

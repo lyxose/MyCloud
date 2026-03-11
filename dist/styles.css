@@ -1145,6 +1145,7 @@ body.is-admin .split {
   user-select: text;
   cursor: text;
   max-width: 360px;
+  white-space: normal;
 }
 
 .tooltip-title {
@@ -1179,6 +1180,10 @@ body.is-admin .split {
   flex-direction: column;
   gap: 0.3rem;
   min-width: 140px;
+  max-width: min(280px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  pointer-events: auto;
 }
 
 .slot-action-menu-title {
