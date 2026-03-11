@@ -1397,7 +1397,6 @@ function attachAdminScheduleResizeObserver(container) {
 
 function renderScheduleGrid() {
   if (!scheduleGrid) return;
-  const pageScroll = snapshotPageScroll();
   const prevDays = scheduleGrid.querySelector(".schedule-days");
   if (prevDays) scheduleScrollState.schedule = prevDays.scrollLeft;
   scheduleGrid.innerHTML = "";
@@ -1600,7 +1599,6 @@ function renderScheduleGrid() {
     dayEl.appendChild(body);
     daysContainer.appendChild(dayEl);
   });
-  restorePageScrollStable(pageScroll);
 }
 
 function addScheduleSlot({ date, startMin, endMin, capacity }) {
@@ -1739,20 +1737,6 @@ function openSlotActionMenu(x, y, actions, titleText = "") {
   document.addEventListener("contextmenu", slotActionMenuCloseHandler, true);
   window.addEventListener("scroll", closeSlotActionMenu, true);
   window.addEventListener("resize", closeSlotActionMenu);
-}
-
-function snapshotPageScroll() {
-  return { x: window.scrollX, y: window.scrollY };
-}
-
-function restorePageScroll(snapshot) {
-  if (!snapshot) return;
-  window.scrollTo(snapshot.x, snapshot.y);
-}
-
-function restorePageScrollStable(snapshot) {
-  restorePageScroll(snapshot);
-  requestAnimationFrame(() => restorePageScroll(snapshot));
 }
 
 function getUnifiedSlotExperimentName(slot) {
@@ -2492,7 +2476,6 @@ const adminScheduleState = {
 function renderAdminEditScheduleGrid() {
   const container = document.getElementById("adminEditScheduleGrid");
   if (!container) return;
-  const pageScroll = snapshotPageScroll();
   attachAdminScheduleResizeObserver(container);
   const prevDays = container.querySelector(".schedule-days");
   if (prevDays) scheduleScrollState.admin = prevDays.scrollLeft;
@@ -2798,7 +2781,6 @@ function renderAdminEditScheduleGrid() {
     dayEl.appendChild(body);
     daysContainer.appendChild(dayEl);
   });
-  restorePageScrollStable(pageScroll);
 }
 
 function addAdminScheduleSlot({ date, startMin, endMin, capacity }) {
@@ -5000,7 +4982,6 @@ function renderUnifiedScheduleLocationTabs() {
 
 function renderUnifiedScheduleGrid() {
   if (!unifiedScheduleGrid) return;
-  const pageScroll = snapshotPageScroll();
   const prevDays = unifiedScheduleGrid.querySelector(".schedule-days");
   if (prevDays) scheduleScrollState.unified = prevDays.scrollLeft;
   unifiedScheduleGrid.innerHTML = "";
@@ -5222,7 +5203,6 @@ function renderUnifiedScheduleGrid() {
   if (!locationSlots.length) {
     setStatus(unifiedScheduleStatus, `当前地点 ${currentLocation} 暂无已预约时间块`, false);
   }
-  restorePageScrollStable(pageScroll);
 }
 
 function isSchedulePath() {
