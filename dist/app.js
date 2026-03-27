@@ -3071,6 +3071,8 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
   let startMin = slot.startMin;
   let endMin = slot.endMin;
   let dragging = false;
+  let visualDeltaPx = 0;
+  const DRAG_DEBUG = window.DRAG_DEBUG_ENABLED || false;
 
   const onMove = (event) => {
     const dx = event.clientX - startX;
@@ -3078,7 +3080,9 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
     if (!dragging) {
       if (Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
       dragging = true;
+      if (DRAG_DEBUG) console.log(`[DRAG_START] slot: ${slot.id}, startMin: ${slot.startMin}, y: ${startY}`);
     }
+    visualDeltaPx = dy;
     const delta = event.clientY - startY;
     const step = Math.round(delta / (PX_PER_MIN * 10)) * 10;
     const duration = endMin - startMin;
@@ -3089,15 +3093,23 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
     }
     slot.startMin = nextStart;
     slot.endMin = nextStart + duration;
-    renderFn();
+    
+    const transformPx = (nextStart - startMin) * PX_PER_MIN;
+    slotEl.style.transform = `translateY(${transformPx}px)`;
+    if (DRAG_DEBUG) {
+      console.log(`[DRAG_MOVE] step: ${step}, nextStart: ${nextStart}, visualTransform: ${transformPx}px`);
+    }
   };
 
   const onUp = () => {
     document.removeEventListener("mousemove", onMove);
     document.removeEventListener("mouseup", onUp);
     if (dragging) {
+      if (DRAG_DEBUG) console.log(`[DRAG_END] slot: ${slot.id}, newStartMin: ${slot.startMin}, endMin: ${slot.endMin}`);
+      slotEl.style.transform = "";
       mergeOverlappingSlots(stateRef);
       renderFn();
+      if (DRAG_DEBUG) console.log(`[RENDER_COMPLETE] renderFn called at ${new Date().toISOString()}`);
     }
     dragging = false;
   };
@@ -3112,6 +3124,10 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
     showSlotNudgeControls({ slot, stateRef, renderFn, mode: "move", edge: null });
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
+    if (DRAG_DEBUG) {
+      console.log(`[DRAG_CAPTURE] startX: ${startX}, startY: ${startY}, slot.startMin: ${startMin}`);
+      console.log(`[SCROLL_BEFORE] window.scrollY: ${window.scrollY}, scrollParent: ${unifiedScheduleGrid?.scrollTop || 'N/A'}`);
+    }
   });
 
   let pressTimer = null;
@@ -3122,6 +3138,7 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
       startY = event.touches[0].clientY;
       startMin = slot.startMin;
       endMin = slot.endMin;
+      if (DRAG_DEBUG) console.log(`[TOUCH_START] startY: ${startY}, startMin: ${startMin}`);
     }, 350);
   });
 

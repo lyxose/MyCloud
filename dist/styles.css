@@ -1211,11 +1211,34 @@ body.is-admin .split {
   gap: 0.45rem;
 }
 
+.blacklist-config strong {
+  word-break: break-word;
+}
+
+.blacklist-config > p.hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #666;
+  word-break: break-word;
+}
+
 .blacklist-actions {
   display: flex;
   gap: 0.6rem;
   align-items: center;
   flex-wrap: wrap;
+  width: 100%;
+  min-width: 0;
+}
+
+.blacklist-actions button {
+  flex-shrink: 0;
+}
+
+.blacklist-actions input[type="file"] {
+  flex: 1;
+  min-width: 100px;
+  max-width: 100%;
 }
 
 .participant-profile-modal {
@@ -1548,6 +1571,30 @@ body.is-admin .split {
   justify-content: space-between;
   gap: 0.8rem;
   flex-wrap: wrap;
+}
+
+.checkbox-pair {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.95rem;
+  padding: 0;
+  margin: 0;
+}
+
+.checkbox-pair .inline-check {
+  margin: 0;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.45rem;
+  line-height: 1.2;
+  color: var(--text);
+}
+
+.checkbox-pair .inline-check input[type="checkbox"] {
+  margin-top: 0.25rem;
+  flex-shrink: 0;
 }
 
 .inline-check {

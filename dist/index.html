@@ -523,9 +523,6 @@
                         <option value="no">否</option>
                       </select>
                     </label>
-                    <label class="inline-check">
-                      <input type="checkbox" id="needsManualConfirmation" name="needs_manual_confirmation" />该实验报名需要主试确认后生效
-                    </label>
                     <label id="scheduleSlotsRequiredField">
                       预约时间段数量
                       <input name="schedule_slots_required" id="scheduleSlotsRequired" value="=1" />
@@ -539,10 +536,17 @@
                       </div>
                       <div class="hint" id="blacklistStatus">未上传黑名单文件</div>
                     </div>
-                    <div class="submit-row">
+                    <div class="checkbox-pair">
                       <label class="inline-check">
-                        <input type="checkbox" id="sameDeviceSingleAccount" name="same_device_single_account" checked />同一实验中，同一设备禁止切换不同账号重复报名
+                        <input type="checkbox" id="needsManualConfirmation" name="needs_manual_confirmation" />
+                        该实验报名需要主试确认后生效
                       </label>
+                      <label class="inline-check">
+                        <input type="checkbox" id="sameDeviceSingleAccount" name="same_device_single_account" checked />
+                        同一实验中，同一设备禁止切换不同账号重复报名
+                      </label>
+                    </div>
+                    <div class="submit-row">
                       <button type="submit" class="primary">确认发布实验</button>
                     </div>
                     <p class="form-note" id="adminExperimentStatus"></p>
