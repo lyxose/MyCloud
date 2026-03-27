@@ -542,6 +542,10 @@ const accessControlHint = document.getElementById("accessControlHint");
 const allowedDevicesField = document.getElementById("allowedDevicesField");
 const allowedBrowsersField = document.getElementById("allowedBrowsersField");
 const sameDeviceSingleAccount = document.getElementById("sameDeviceSingleAccount");
+const needsManualConfirmation = document.getElementById("needsManualConfirmation");
+const downloadBlacklistTemplateBtn = document.getElementById("downloadBlacklistTemplateBtn");
+const blacklistFileInput = document.getElementById("blacklistFileInput");
+const blacklistStatus = document.getElementById("blacklistStatus");
 const tokenScriptHelp = document.getElementById("tokenScriptHelp");
 const tokenScriptMask = null;
 const tokenScriptBlock = null;
@@ -606,6 +610,191 @@ function setAdminTabsLoading(text = "正在加载实验列表...") {
 function toJsonForm(form) {
   const data = new FormData(form);
   return Object.fromEntries(data.entries());
+}
+
+function createEmptyBlacklistConfig() {
+  return {
+    names: [],
+    alipay_phones: [],
+    wechats: [],
+  };
+}
+
+const blacklistState = {
+  create: createEmptyBlacklistConfig(),
+};
+
+function normalizeBlacklistConfigValue(raw) {
+  const input = raw && typeof raw === "object" ? raw : {};
+  const toList = (value) => {
+    if (!Array.isArray(value)) return [];
+    return Array.from(new Set(value
+      .map((item) => String(item || "").trim())
+      .filter(Boolean)));
+  };
+  return {
+    names: toList(input.names),
+    alipay_phones: toList(input.alipay_phones),
+    wechats: toList(input.wechats),
+  };
+}
+
+function formatBlacklistSummary(cfg) {
+  const normalized = normalizeBlacklistConfigValue(cfg);
+  const total = normalized.names.length + normalized.alipay_phones.length + normalized.wechats.length;
+  if (!total) return "未上传黑名单文件";
+  return `已载入黑名单：姓名 ${normalized.names.length} 条，支付宝手机号 ${normalized.alipay_phones.length} 条，微信号 ${normalized.wechats.length} 条`;
+}
+
+function setBlacklistStatus(el, cfg, isError = false) {
+  if (!el) return;
+  el.textContent = formatBlacklistSummary(cfg);
+  el.style.color = isError ? "#b42318" : "";
+}
+
+function getSheetRowsByName(workbook, candidates = []) {
+  const names = Array.isArray(workbook?.SheetNames) ? workbook.SheetNames : [];
+  const picked = names.find((name) => candidates.includes(String(name || "").trim()));
+  if (!picked) return [];
+  const sheet = workbook.Sheets[picked];
+  if (!sheet) return [];
+  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false });
+  return Array.isArray(rows) ? rows : [];
+}
+
+function normalizeSingleColumnRows(rows) {
+  if (!Array.isArray(rows)) return [];
+  return Array.from(new Set(rows
+    .map((row) => {
+      if (!Array.isArray(row)) return "";
+      return String(row[0] || "").trim();
+    })
+    .filter(Boolean)
+    .filter((value, index) => {
+      if (index > 0) return true;
+      return value !== "值";
+    })));
+}
+
+async function parseBlacklistWorkbookFile(file) {
+  if (!file) return createEmptyBlacklistConfig();
+  if (typeof XLSX === "undefined") {
+    throw new Error("未加载 XLSX 解析库，无法读取黑名单文件");
+  }
+  const buffer = await file.arrayBuffer();
+  const workbook = XLSX.read(buffer, { type: "array" });
+  const namesRows = getSheetRowsByName(workbook, ["姓名", "name", "names"]);
+  const alipayRows = getSheetRowsByName(workbook, ["支付宝手机号", "支付宝", "alipay_phone", "alipay"]);
+  const wechatRows = getSheetRowsByName(workbook, ["微信号", "微信", "wechat"]);
+  const parsed = {
+    names: normalizeSingleColumnRows(namesRows),
+    alipay_phones: normalizeSingleColumnRows(alipayRows),
+    wechats: normalizeSingleColumnRows(wechatRows),
+  };
+  if (!parsed.names.length && !parsed.alipay_phones.length && !parsed.wechats.length) {
+    throw new Error("黑名单文件为空，或缺少姓名/支付宝手机号/微信号 sheet");
+  }
+  return parsed;
+}
+
+function downloadBlacklistTemplateFile() {
+  if (typeof XLSX === "undefined") {
+    alert("未加载 XLSX 库，无法下载模板");
+    return;
+  }
+  const wb = XLSX.utils.book_new();
+  const makeSheet = () => XLSX.utils.aoa_to_sheet([["值"]]);
+  XLSX.utils.book_append_sheet(wb, makeSheet(), "姓名");
+  XLSX.utils.book_append_sheet(wb, makeSheet(), "支付宝手机号");
+  XLSX.utils.book_append_sheet(wb, makeSheet(), "微信号");
+  XLSX.writeFile(wb, "黑名单模板.xlsx");
+}
+
+function ensureParticipantProfileModal() {
+  let modal = document.getElementById("participantProfileModal");
+  if (modal) return modal;
+  modal = document.createElement("div");
+  modal.id = "participantProfileModal";
+  modal.className = "participant-profile-modal hidden";
+  modal.innerHTML = `
+    <div class="modal-overlay" data-action="close"></div>
+    <div class="modal-content" role="dialog" aria-modal="true" aria-label="被试详情">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+        <h3 style="margin:0;">被试详情</h3>
+        <button type="button" class="ghost" data-action="close">关闭</button>
+      </div>
+      <div id="participantProfileContent" style="margin-top:0.75rem;"></div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelectorAll("[data-action='close']").forEach((el) => {
+    el.addEventListener("click", () => {
+      modal.classList.add("hidden");
+    });
+  });
+  return modal;
+}
+
+function renderParticipantProfileContent(profile) {
+  const content = document.getElementById("participantProfileContent");
+  if (!content) return;
+  const majors = Array.isArray(profile?.majors) ? profile.majors.join("、") : "-";
+  const types = Array.isArray(profile?.experiments_types) ? profile.experiments_types.join("、") : "-";
+  const ids = Array.isArray(profile?.experiments_ids) ? profile.experiments_ids.join("、") : "-";
+  const feedbackList = Array.isArray(profile?.experiment_feedback) ? profile.experiment_feedback : [];
+  const feedbackHtml = feedbackList.length
+    ? `<ul>${feedbackList.map((item) => `<li>${escapeHtml(String(item?.experiment_uid || "-"))}：${escapeHtml(String(item?.feedback || "-"))}</li>`).join("")}</ul>`
+    : "<p class='hint'>暂无评价记录</p>";
+  const participation = profile?.experiment_participation || {};
+  const participationRows = Object.entries(participation).map(([uid, record]) => {
+    const slots = Array.isArray(record?.slots) ? record.slots : [];
+    const latest = slots.length ? slots[slots.length - 1] : null;
+    const latestLabel = latest?.start_time ? formatSlotDateTime(latest.start_time) : "-";
+    return `<li>${escapeHtml(uid)}（最近时段：${escapeHtml(latestLabel)}）</li>`;
+  });
+
+  content.innerHTML = `
+    <div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));">
+      <div><strong>姓名</strong><div>${escapeHtml(profile?.name || "-")}</div></div>
+      <div><strong>ID</strong><div>${escapeHtml(profile?.user_uid || "-")}</div></div>
+      <div><strong>支付宝手机号</strong><div>${escapeHtml(profile?.alipay_phone || "-")}</div></div>
+      <div><strong>微信号</strong><div>${escapeHtml(profile?.wechat || "-")}</div></div>
+      <div><strong>性别</strong><div>${escapeHtml(profile?.gender || "-")}</div></div>
+      <div><strong>年龄</strong><div>${escapeHtml(String(profile?.age ?? "-"))}</div></div>
+      <div><strong>单位</strong><div>${escapeHtml(profile?.unit || "-")}</div></div>
+      <div><strong>职业</strong><div>${escapeHtml(profile?.occupation || "-")}</div></div>
+      <div><strong>专业</strong><div>${escapeHtml(majors || "-")}</div></div>
+      <div><strong>参与实验类型</strong><div>${escapeHtml(types || "-")}</div></div>
+      <div style="grid-column:1 / -1;"><strong>参与实验ID</strong><div>${escapeHtml(ids || "-")}</div></div>
+    </div>
+    <div style="margin-top:0.8rem;">
+      <strong>评价记录</strong>
+      ${feedbackHtml}
+    </div>
+    <div style="margin-top:0.8rem;">
+      <strong>参与记录</strong>
+      ${participationRows.length ? `<ul>${participationRows.join("")}</ul>` : "<p class='hint'>暂无参与记录</p>"}
+    </div>
+  `;
+}
+
+async function openParticipantProfileModal(experimentUid, userUid) {
+  const modal = ensureParticipantProfileModal();
+  const content = document.getElementById("participantProfileContent");
+  if (content) content.innerHTML = "<p class='hint'>正在加载被试详情...</p>";
+  modal.classList.remove("hidden");
+  try {
+    const data = await apiRequest("/admin/experiment/participant/profile", {
+      method: "POST",
+      json: {
+        experiment_uid: experimentUid,
+        user_uid: userUid,
+      },
+    });
+    renderParticipantProfileContent(data?.profile || {});
+  } catch (error) {
+    if (content) content.innerHTML = `<p class='notice'>加载失败：${escapeHtml(error.message || "未知错误")}</p>`;
+  }
 }
 
 function safeJsonParse(value, fallback) {
@@ -740,6 +929,14 @@ function copyExperimentToNewDraft(experiment) {
 
   if (sameDeviceSingleAccount) {
     sameDeviceSingleAccount.checked = Number(experiment.same_device_single_account ?? 1) !== 0;
+  }
+  if (needsManualConfirmation) {
+    needsManualConfirmation.checked = Number(experiment.needs_manual_confirmation || 0) === 1;
+  }
+  blacklistState.create = normalizeBlacklistConfigValue(safeJsonParse(experiment.blacklist_json, {}));
+  setBlacklistStatus(blacklistStatus, blacklistState.create);
+  if (blacklistFileInput) {
+    blacklistFileInput.value = "";
   }
 
   if (downloadPolicy) {
@@ -1714,9 +1911,11 @@ function openSlotActionMenu(x, y, actions, titleText = "") {
     btn.type = "button";
     btn.textContent = action.label;
     if (action.danger) btn.classList.add("danger");
+    if (action.muted) btn.classList.add("muted");
+    if (action.disabled) btn.disabled = true;
     btn.addEventListener("click", () => {
-      closeSlotActionMenu();
-      action.onClick();
+      if (!action.keepOpen) closeSlotActionMenu();
+      if (typeof action.onClick === "function") action.onClick();
     });
     menu.appendChild(btn);
   });
@@ -2056,7 +2255,7 @@ function startTouchResize(slotEl, slot, stateRef, renderFn, startY, preferredEdg
   document.addEventListener("touchcancel", onEnd);
 }
 
-function attachMobileSlotHandlers(slotEl, slot, stateRef, renderFn, onDelete, onCapacityEdit, onLockedTap, getLongPressTitle) {
+function attachMobileSlotHandlers(slotEl, slot, stateRef, renderFn, onDelete, onCapacityEdit, onLockedTap, getLongPressTitle, getLockedMenuActions) {
   let pressTimer = null;
   let moved = false;
   let longPressed = false;
@@ -2079,7 +2278,10 @@ function attachMobileSlotHandlers(slotEl, slot, stateRef, renderFn, onDelete, on
       longPressed = true;
       const titleText = typeof getLongPressTitle === "function" ? getLongPressTitle(slot) : "";
       if (slot.locked) {
-        openSlotActionMenu(startX, startY, [{
+        const lockedActions = typeof getLockedMenuActions === "function"
+          ? getLockedMenuActions(slot)
+          : [];
+        openSlotActionMenu(startX, startY, lockedActions.length ? lockedActions : [{
           label: "关闭",
           onClick: () => {},
         }], titleText);
@@ -2349,6 +2551,19 @@ function shiftAdminSelectedSlots(minuteDelta) {
   renderAdminEditScheduleGrid();
 }
 
+function shiftUnifiedSelectedSlots(minuteDelta) {
+  const selected = unifiedScheduleState.slots.filter((slot) => unifiedScheduleState.selectedIds.has(slot.id) && slot.can_edit);
+  if (!selected.length) return;
+  selected.forEach((slot) => {
+    const duration = slot.endMin - slot.startMin;
+    const nextStart = Math.max(0, Math.min(1440 - duration, slot.startMin + minuteDelta));
+    slot.startMin = nextStart;
+    slot.endMin = nextStart + duration;
+  });
+  unifiedScheduleState.dirty = true;
+  renderUnifiedScheduleGrid();
+}
+
 function deleteAdminSelectedSlots() {
   if (adminScheduleState.selectedIds.size === 0) return;
   adminScheduleState.slots = adminScheduleState.slots.filter((slot) => !adminScheduleState.selectedIds.has(slot.id));
@@ -2609,21 +2824,42 @@ function renderAdminEditScheduleGrid() {
         slotEl.style.top = `${slot.startMin * PX_PER_MIN}px`;
         slotEl.style.height = `${(slot.endMin - slot.startMin) * PX_PER_MIN}px`;
         slotEl.dataset.id = slot.id;
+        const slotParticipants = Array.isArray(slot.participants) ? slot.participants : [];
+        const pendingParticipants = slotParticipants.filter((participant) => {
+          const status = String(participant?.participant_status || participant?.status || "").toLowerCase();
+          return status === "pending";
+        });
+        const hasPending = pendingParticipants.length > 0;
+        const hasPendingOnly = hasPending && pendingParticipants.length === slotParticipants.length;
+        if (hasPending) {
+          slotEl.classList.add("pending");
+        }
         const participantNames = (slot.participants || [])
           .map((p) => String(p?.name || "").trim())
           .filter(Boolean)
           .join("、");
-        const participantContacts = (slot.participants || [])
+        const participantContactRows = (slot.participants || [])
           .map((p) => {
             const info = adminEditState.participants?.[p.user_uid] || {};
-            return `${p.name || "-"} ${info.alipay_phone || "-"} ${info.wechat || "-"}`;
-          })
+            const status = String(p?.participant_status || p?.status || "").toLowerCase();
+            return {
+              user_uid: String(p?.user_uid || "").trim(),
+              name: String(p?.name || "-").trim() || "-",
+              alipay_phone: String(info.alipay_phone || "-").trim() || "-",
+              wechat: String(info.wechat || "-").trim() || "-",
+              pending: status === "pending",
+            };
+          });
+        const participantContacts = participantContactRows
+          .map((row) => `${row.name}${row.pending ? "（待确认）" : ""} ${row.alipay_phone} ${row.wechat}`)
           .join("\n");
         if (slot.locked) {
           let displayText;
           // 优先显示被试名字，无论sourceType如何
           if (participantNames) {
-            displayText = participantNames;
+            displayText = hasPendingOnly
+              ? `${participantNames}（待确认）`
+              : (hasPending ? `${participantNames}（含待确认）` : participantNames);
           } else if (slot.sourceType) {
             // 无被试时才根据sourceType显示
             if (slot.sourceType === "unified_manual") {
@@ -2658,12 +2894,7 @@ function renderAdminEditScheduleGrid() {
 
         slotEl.addEventListener("click", (event) => {
           event.stopPropagation();
-          if (slot.locked) {
-            if (participantContacts && !slot.sourceType) {
-              showTooltip(participantContacts, event.clientX + 8, event.clientY + 8, { durationMs: 0, selectable: true });
-            }
-            return;
-          }
+          if (slot.locked) return;
           if (event.ctrlKey || event.metaKey) {
             toggleAdminSlotSelection(slot.id);
           } else {
@@ -2677,34 +2908,28 @@ function renderAdminEditScheduleGrid() {
             event.preventDefault();
             event.stopPropagation();
             if (slot.sourceType) return;
-            showTooltip(participantContacts, event.clientX + 8, event.clientY + 8, { durationMs: 0, selectable: true });
+            const profileCandidates = participantContactRows.filter((row) => row.user_uid);
+            const actions = profileCandidates.length
+              ? [{
+                label: "查看被试详情",
+                onClick: async () => {
+                  if (profileCandidates.length === 1) {
+                    await openParticipantProfileModal(adminEditState.experiment?.experiment_uid, profileCandidates[0].user_uid);
+                    return;
+                  }
+                  const labels = profileCandidates.map((row) => `${row.name}(${row.user_uid})`).join("\n");
+                  const chosen = String(prompt(`输入要查看的被试ID：\n${labels}`, profileCandidates[0].user_uid) || "").trim().toUpperCase();
+                  if (!chosen) return;
+                  await openParticipantProfileModal(adminEditState.experiment?.experiment_uid, chosen);
+                },
+              }]
+              : [];
+            showTooltip(participantContacts, event.clientX + 8, event.clientY + 8, {
+              durationMs: 0,
+              selectable: true,
+              actions,
+            });
           });
-          if (!slot.sourceType) {
-            slotEl.addEventListener("mouseenter", (event) => {
-              showTooltip(participantContacts, event.clientX + 8, event.clientY + 8, { durationMs: 0, selectable: true });
-            });
-            slotEl.addEventListener("mouseleave", () => {
-              scheduleTooltipHide(180);
-            });
-          }
-          let contactTouchTimer = null;
-          slotEl.addEventListener("touchstart", (event) => {
-            if (!event.touches || event.touches.length !== 1) return;
-            contactTouchTimer = setTimeout(() => {
-              const touch = event.changedTouches?.[0] || event.touches?.[0];
-              if (touch && !slot.sourceType) {
-                showTooltip(participantContacts, touch.clientX + 8, touch.clientY + 8, { durationMs: 2200, selectable: true });
-              }
-            }, 520);
-          }, { passive: true });
-          const clearContactTouchTimer = () => {
-            if (!contactTouchTimer) return;
-            clearTimeout(contactTouchTimer);
-            contactTouchTimer = null;
-          };
-          slotEl.addEventListener("touchend", clearContactTouchTimer, { passive: true });
-          slotEl.addEventListener("touchmove", clearContactTouchTimer, { passive: true });
-          slotEl.addEventListener("touchcancel", clearContactTouchTimer, { passive: true });
         }
 
         const deleteSlot = () => {
@@ -2722,22 +2947,47 @@ function renderAdminEditScheduleGrid() {
             renderAdminEditScheduleGrid();
           }
         };
-        const lockedTap = (touchEvent) => {
-          if (!slot.locked) return;
-          const touch = touchEvent.changedTouches?.[0];
-          const contacts = (slot.participants || [])
-            .map((p) => {
-              const info = adminEditState.participants?.[p.user_uid] || {};
-              return `${p.name} ${info.alipay_phone || "-"} ${info.wechat || "-"}`;
-            })
-            .join("\n");
-          if (contacts && touch) {
-            showTooltip(contacts, touch.clientX + 8, touch.clientY + 8);
-          }
-        };
+        const lockedTap = () => {};
         if (slot.sourceType) {
           bindSlotOwnershipTooltip(slotEl, slot, getAdminSlotExperimentName);
         }
+        const lockedMenuActions = () => {
+          if (!participantContactRows.length || slot.sourceType) {
+            return [{ label: "关闭", onClick: () => {} }];
+          }
+          const summary = participantContactRows
+            .map((row) => `${row.name}${row.pending ? "（待确认）" : ""} ${row.alipay_phone} ${row.wechat}`)
+            .join(" | ");
+          const actions = [{
+            label: summary,
+            muted: true,
+            keepOpen: true,
+            onClick: () => {},
+          }, {
+            label: "复制联系方式",
+            onClick: async () => {
+              try {
+                await navigator.clipboard?.writeText?.(participantContacts);
+              } catch {
+                // ignore
+              }
+            },
+          }];
+          const profileRows = participantContactRows.filter((row) => row.user_uid);
+          if (profileRows.length) {
+            actions.push({
+              label: "查看被试详情",
+              onClick: async () => {
+                const targetUid = profileRows.length === 1
+                  ? profileRows[0].user_uid
+                  : String(prompt("输入被试ID", profileRows[0].user_uid) || "").trim().toUpperCase();
+                if (!targetUid) return;
+                await openParticipantProfileModal(adminEditState.experiment?.experiment_uid, targetUid);
+              },
+            });
+          }
+          return actions;
+        };
         attachMobileSlotHandlers(
           slotEl,
           slot,
@@ -2746,7 +2996,8 @@ function renderAdminEditScheduleGrid() {
           deleteSlot,
           editCapacity,
           lockedTap,
-          () => `所属实验：${getAdminSlotExperimentName(slot)}`
+          () => `所属实验：${getAdminSlotExperimentName(slot)}`,
+          lockedMenuActions
         );
 
         if (!slot.locked) {
@@ -3818,6 +4069,17 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
             报酬（元）
             <input name="reward" id="adminEditReward" value="${experiment.reward || ""}" />
           </label>
+          <label class="inline-check" style="margin:0;">
+            <input type="checkbox" id="adminEditNeedsManualConfirmation" ${Number(experiment.needs_manual_confirmation || 0) === 1 ? "checked" : ""} />该实验报名需要主试确认后生效
+          </label>
+          <div class="blacklist-config">
+            <strong>黑名单设置（姓名/支付宝手机号/微信号）</strong>
+            <div class="blacklist-actions">
+              <button type="button" class="ghost" id="adminEditDownloadBlacklistTemplateBtn">下载黑名单模板</button>
+              <input type="file" id="adminEditBlacklistFileInput" accept=".xlsx,.xls" />
+            </div>
+            <div class="hint" id="adminEditBlacklistStatus">未上传黑名单文件</div>
+          </div>
           <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
             <label class="inline-check" style="margin:0;">
               <input type="checkbox" id="adminEditSameDeviceSingleAccount" ${Number(experiment.same_device_single_account ?? 1) !== 0 ? "checked" : ""} />同一实验中，同一设备禁止切换不同账号重复报名
@@ -3875,6 +4137,10 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
   const editAllowedDevices = panel.querySelector("#adminEditAllowedDevices");
   const editAllowedBrowsers = panel.querySelector("#adminEditAllowedBrowsers");
   const editSameDeviceSingleAccount = panel.querySelector("#adminEditSameDeviceSingleAccount");
+  const editNeedsManualConfirmation = panel.querySelector("#adminEditNeedsManualConfirmation");
+  const editDownloadBlacklistTemplateBtn = panel.querySelector("#adminEditDownloadBlacklistTemplateBtn");
+  const editBlacklistFileInput = panel.querySelector("#adminEditBlacklistFileInput");
+  const editBlacklistStatus = panel.querySelector("#adminEditBlacklistStatus");
   const editContactPhone = panel.querySelector("#adminEditContactPhone");
   const editDescription = panel.querySelector("#adminEditDescription");
   const editNotes = panel.querySelector("#adminEditNotes");
@@ -3887,6 +4153,33 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
   const hostedReuploadBtn = panel.querySelector("#adminHostedReuploadBtn");
   const hostedReuploadInput = panel.querySelector("#adminHostedReuploadInput");
   const hostedReuploadStatus = panel.querySelector("#adminHostedReuploadStatus");
+  let editBlacklistConfig = normalizeBlacklistConfigValue(safeJsonParse(experiment.blacklist_json, {}));
+  setBlacklistStatus(editBlacklistStatus, editBlacklistConfig);
+
+  editDownloadBlacklistTemplateBtn?.addEventListener("click", () => {
+    downloadBlacklistTemplateFile();
+  });
+
+  editBlacklistFileInput?.addEventListener("change", async (event) => {
+    const file = event.target?.files?.[0];
+    if (!file) {
+      editBlacklistConfig = createEmptyBlacklistConfig();
+      setBlacklistStatus(editBlacklistStatus, editBlacklistConfig);
+      return;
+    }
+    try {
+      if (editBlacklistStatus) {
+        editBlacklistStatus.textContent = "正在解析黑名单文件...";
+        editBlacklistStatus.style.color = "";
+      }
+      editBlacklistConfig = await parseBlacklistWorkbookFile(file);
+      setBlacklistStatus(editBlacklistStatus, editBlacklistConfig);
+    } catch (error) {
+      editBlacklistConfig = createEmptyBlacklistConfig();
+      setBlacklistStatus(editBlacklistStatus, editBlacklistConfig, true);
+      setStatus(adminExperimentStatus, error.message || "黑名单解析失败", true);
+    }
+  });
 
   if (editType) editType.value = experiment.type || "";
 
@@ -4148,6 +4441,8 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
           allowed_devices: allowedDevices,
           allowed_browsers: locationValue === "在线" ? allowedBrowsers : undefined,
           same_device_single_account: editSameDeviceSingleAccount?.checked !== false,
+          needs_manual_confirmation: editNeedsManualConfirmation?.checked === true,
+          blacklist: normalizeBlacklistConfigValue(editBlacklistConfig),
           github_repo: githubRepoValue || null,
           download_policy: editDownloadPolicy?.value || null,
         },
@@ -4541,6 +4836,28 @@ function showTooltip(text, x, y, options = {}) {
     tip.textContent = text;
   }
 
+  const actions = Array.isArray(options?.actions) ? options.actions : [];
+  if (actions.length) {
+    const actionsWrap = document.createElement("div");
+    actionsWrap.className = "tooltip-actions";
+    actions.forEach((action) => {
+      if (!action || !action.label || typeof action.onClick !== "function") return;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = String(action.label);
+      btn.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        removeTooltip();
+        action.onClick();
+      });
+      actionsWrap.appendChild(btn);
+    });
+    if (actionsWrap.children.length) {
+      tip.appendChild(actionsWrap);
+    }
+  }
+
   const vx = Number(x || 0) - window.scrollX;
   const vy = Number(y || 0) - window.scrollY;
   const maxW = options?.selectable ? 360 : 280;
@@ -4616,7 +4933,9 @@ async function loadParticipantsForExperiment(experimentUid, list, options = {}) 
       const item = document.createElement("div");
       item.className = "admin-participant-item";
       const isRejected = String(participant.participant_status || participant.status || "").toLowerCase() === "rejected" || participant.rejected === true;
+      const isPending = !isRejected && String(participant.participant_status || participant.status || "").toLowerCase() === "pending";
       if (isRejected) item.classList.add("rejected");
+      if (isPending) item.classList.add("pending");
       item.title = contactText;
       const startRaw = isScheduled
         ? participant.slot?.start_time
@@ -4628,8 +4947,12 @@ async function loadParticipantsForExperiment(experimentUid, list, options = {}) 
       const rejectMeta = isRejected
         ? `（已拒绝${participant.rejected_at ? `：${participant.rejected_at}` : ""}${participant.rejection_reason ? `，原因：${participant.rejection_reason}` : ""}）`
         : "";
+      const pendingMeta = isPending ? '<span class="pending-mark">（待确认）</span>' : "";
       const tokenRecoveryButton = isAccessControlledWithToken
         ? `<button type="button" class="ghost" data-action="recover-token" ${isRejected ? "disabled" : ""}>恢复报名链接</button>`
+        : "";
+      const confirmButton = isPending
+        ? `<button type="button" class="ghost" data-action="confirm">确认报名</button>`
         : "";
       const rejectOrRestoreButton = isRejected
         ? `<button type="button" class="ghost" data-action="restore">恢复被试</button>`
@@ -4637,10 +4960,12 @@ async function loadParticipantsForExperiment(experimentUid, list, options = {}) 
       item.innerHTML = `
         <label class="admin-batch-pick"><input type="checkbox" data-action="select-row" /></label>
         <div class="admin-participant-main">
-          <span class="admin-participant-head">${participant.name} (${participant.user_uid}) ${rejectMeta}</span>
+          <span class="admin-participant-head">${participant.name} (${participant.user_uid}) ${pendingMeta}${rejectMeta}</span>
           <span class="admin-participant-time">${timeRangeHtml}</span>
         </div>
         <div class="admin-participant-actions">
+          <button type="button" class="ghost" data-action="profile">被试详情</button>
+          ${confirmButton}
           <button type="button" class="ghost" data-action="download-user">下载数据</button>
           ${rejectOrRestoreButton}
           <button type="button" class="ghost" data-action="feedback">添加评价</button>
@@ -4719,6 +5044,29 @@ async function loadParticipantsForExperiment(experimentUid, list, options = {}) 
           method: "POST",
           json: { user_uid: participant.user_uid, experiment_uid: experimentUid, feedback },
         });
+      });
+      item.querySelector("[data-action='profile']")?.addEventListener("click", async () => {
+        await openParticipantProfileModal(experimentUid, participant.user_uid);
+      });
+      item.querySelector("[data-action='confirm']")?.addEventListener("click", async () => {
+        const ok = window.confirm(`确认通过 ${participant.name}（${participant.user_uid}）的报名？`);
+        if (!ok) return;
+        try {
+          await apiRequest("/admin/experiment/participant/confirm", {
+            method: "POST",
+            json: {
+              experiment_uid: experimentUid,
+              user_uid: participant.user_uid,
+              slot_id: participant.slot?.id,
+            },
+          });
+          await loadParticipantsForExperiment(experimentUid, list, {
+            ...options,
+            force: true,
+          });
+        } catch (error) {
+          alert(error.message || "确认失败");
+        }
       });
       item.querySelector("[data-action='reject']")?.addEventListener("click", async () => {
         const reason = prompt("可选：输入拒绝原因（留空可直接确认）", "") ?? "";
@@ -5104,20 +5452,24 @@ function renderUnifiedScheduleGrid() {
         const slotEl = document.createElement("div");
         slotEl.className = "schedule-slot";
         if (!slot.can_edit) slotEl.classList.add("locked");
+        if (String(slot.source_type || "") === "experiment_pending") slotEl.classList.add("pending");
         if (unifiedScheduleState.selectedIds.has(slot.id)) slotEl.classList.add("selected");
         if (unifiedScheduleState.activeSlotIds.has(slot.id)) slotEl.classList.add("active-slot");
         slotEl.style.top = `${slot.startMin * PX_PER_MIN}px`;
         slotEl.style.height = `${Math.max(10, (slot.endMin - slot.startMin) * PX_PER_MIN)}px`;
-        slotEl.style.background = colorByOwner(slot.owner_uid);
+        if (String(slot.source_type || "") !== "experiment_pending") {
+          slotEl.style.background = colorByOwner(slot.owner_uid);
+        }
         slotEl.dataset.id = slot.id;
 
         const subject = String(slot.subject_name || "-").trim();
+        const pendingTag = String(slot.source_type || "") === "experiment_pending" ? "（待确认）" : "";
         slotEl.innerHTML = `
           <div class="slot-time">
             <span class="slot-time-start">${formatMinutes(slot.startMin)}</span>
             <span class="slot-time-end">${formatMinutes(slot.endMin)}</span>
           </div>
-          <div class="slot-count">${slot.owner_name}-${subject}</div>
+          <div class="slot-count">${slot.owner_name}-${subject}${pendingTag}</div>
           ${slot.can_edit ? '<div class="slot-handle top">▲</div><div class="slot-handle bottom">▼</div>' : ''}
         `;
 
@@ -5779,6 +6131,29 @@ uploadTabs?.querySelectorAll(".mini-tab").forEach((tab) => {
   });
 });
 
+downloadBlacklistTemplateBtn?.addEventListener("click", () => {
+  downloadBlacklistTemplateFile();
+});
+
+blacklistFileInput?.addEventListener("change", async (event) => {
+  const file = event.target?.files?.[0];
+  if (!file) {
+    blacklistState.create = createEmptyBlacklistConfig();
+    setBlacklistStatus(blacklistStatus, blacklistState.create);
+    return;
+  }
+  try {
+    blacklistStatus.textContent = "正在解析黑名单文件...";
+    blacklistStatus.style.color = "";
+    blacklistState.create = await parseBlacklistWorkbookFile(file);
+    setBlacklistStatus(blacklistStatus, blacklistState.create);
+  } catch (error) {
+    blacklistState.create = createEmptyBlacklistConfig();
+    setBlacklistStatus(blacklistStatus, blacklistState.create, true);
+    setStatus(adminExperimentStatus, error.message || "黑名单文件解析失败", true);
+  }
+});
+
 
 locationSelect?.addEventListener("change", async () => {
   const isOnline = locationSelect.value === "在线";
@@ -5911,10 +6286,18 @@ scheduleRefresh?.addEventListener("click", () => {
 });
 
 document.addEventListener("keydown", (event) => {
-  if (adminArea?.classList.contains("hidden")) return;
+  if (event.key === "Escape") {
+    const modal = document.getElementById("participantProfileModal");
+    if (modal && !modal.classList.contains("hidden")) {
+      modal.classList.add("hidden");
+      return;
+    }
+  }
+  const inSchedulePage = !schedulePage?.classList.contains("hidden");
+  if (adminArea?.classList.contains("hidden") && !inSchedulePage) return;
   const hasAdminSelection = adminScheduleState.selectedIds.size > 0;
   const hasNewSelection = scheduleState.selectedIds.size > 0;
-  const hasUnifiedSelection = !schedulePage?.classList.contains("hidden") && unifiedScheduleState.selectedIds.size > 0;
+  const hasUnifiedSelection = inSchedulePage && unifiedScheduleState.selectedIds.size > 0;
   if (event.key === "Delete") {
     if (hasUnifiedSelection) {
       event.preventDefault();
@@ -5934,18 +6317,26 @@ document.addEventListener("keydown", (event) => {
     }
   }
   if (event.key === "ArrowUp") {
-    event.preventDefault();
-    if (hasAdminSelection) {
+    if (hasUnifiedSelection || hasAdminSelection || hasNewSelection) {
+      event.preventDefault();
+    }
+    if (hasUnifiedSelection) {
+      shiftUnifiedSelectedSlots(-1);
+    } else if (hasAdminSelection) {
       shiftAdminSelectedSlots(-1);
-    } else {
+    } else if (hasNewSelection) {
       shiftSelectedSlots(-1);
     }
   }
   if (event.key === "ArrowDown") {
-    event.preventDefault();
-    if (hasAdminSelection) {
+    if (hasUnifiedSelection || hasAdminSelection || hasNewSelection) {
+      event.preventDefault();
+    }
+    if (hasUnifiedSelection) {
+      shiftUnifiedSelectedSlots(1);
+    } else if (hasAdminSelection) {
       shiftAdminSelectedSlots(1);
-    } else {
+    } else if (hasNewSelection) {
       shiftSelectedSlots(1);
     }
   }
@@ -6203,6 +6594,8 @@ adminExperimentForm?.addEventListener("submit", async (event) => {
       allowed_devices: allowedDevices,
       allowed_browsers: location === "在线" ? allowedBrowsers : [],
       same_device_single_account: sameDeviceSingleAccount?.checked !== false,
+      needs_manual_confirmation: needsManualConfirmation?.checked === true,
+      blacklist: normalizeBlacklistConfigValue(blacklistState.create),
       device_info: navigator.platform || "",
       browser_info: navigator.userAgent || "",
     };
@@ -6226,6 +6619,9 @@ adminExperimentForm?.addEventListener("submit", async (event) => {
     adminExperimentForm.reset();
     resetUploadState();
     setUploadMode("link");
+    blacklistState.create = createEmptyBlacklistConfig();
+    setBlacklistStatus(blacklistStatus, blacklistState.create);
+    if (needsManualConfirmation) needsManualConfirmation.checked = false;
     scheduleEditor?.classList.add("hidden");
     await loadAdminExperiments();
     await loadAdminExperimentList();
@@ -6327,6 +6723,7 @@ logoutBtn.addEventListener("click", async () => {
 initTokenScriptHelp();
 refreshAdminTabCopyHint();
 setUploadMode(uploadState.mode);
+setBlacklistStatus(blacklistStatus, blacklistState.create);
 if (locationSelect?.value !== "在线") {
   uploadTabs?.classList.add("hidden");
 }

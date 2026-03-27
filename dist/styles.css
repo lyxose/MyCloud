@@ -1124,6 +1124,16 @@ body.is-admin .split {
   opacity: 0.7;
 }
 
+.admin-participant-item.pending {
+  background: #fff5f5;
+  border: 1px solid #f7caca;
+}
+
+.admin-participant-head .pending-mark {
+  color: #b42318;
+  font-weight: 700;
+}
+
 .tooltip {
   position: fixed;
   background: linear-gradient(180deg, rgba(16, 38, 67, 0.96) 0%, rgba(10, 26, 48, 0.96) 100%);
@@ -1168,6 +1178,75 @@ body.is-admin .split {
   color: #b0c8e8;
 }
 
+.tooltip-actions {
+  margin-top: 0.5rem;
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.tooltip-actions button {
+  border: 1px solid rgba(189, 216, 255, 0.35);
+  background: rgba(189, 216, 255, 0.12);
+  color: #f4f8ff;
+  border-radius: 8px;
+  padding: 0.28rem 0.5rem;
+  font-size: 0.72rem;
+}
+
+.schedule-slot.pending {
+  background: rgba(232, 85, 79, 0.18) !important;
+  border: 1px dashed rgba(180, 35, 24, 0.72);
+}
+
+.schedule-slot.pending .slot-count {
+  color: #7a1f1a;
+}
+
+.blacklist-config {
+  border: 1px dashed rgba(58, 123, 213, 0.35);
+  border-radius: 12px;
+  padding: 0.65rem 0.8rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.blacklist-actions {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.participant-profile-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+}
+
+.participant-profile-modal.hidden {
+  display: none;
+}
+
+.participant-profile-modal .modal-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 20, 36, 0.55);
+}
+
+.participant-profile-modal .modal-content {
+  position: relative;
+  width: min(900px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  overflow: auto;
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 1rem;
+  box-shadow: 0 18px 40px rgba(10, 24, 45, 0.24);
+}
+
 .slot-action-menu {
   position: fixed;
   z-index: 30;
@@ -1207,6 +1286,14 @@ body.is-admin .split {
 .slot-action-menu button.danger {
   background: #fde8e8;
   color: #b42318;
+}
+
+.slot-action-menu button.muted {
+  background: #f6f8fb;
+  color: #4c5a6a;
+  font-weight: 500;
+  text-align: left;
+  white-space: normal;
 }
 
 .slot-nudge-overlay {
