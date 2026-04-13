@@ -811,6 +811,110 @@ async function openParticipantProfileModal(experimentUid, userUid) {
   }
 }
 
+const MANUAL_PARTICIPANT_FIELD_MAP = {
+  "性别": "gender",
+  "年龄": "age",
+  "所在地区": "region",
+  "左/右利手": "handedness",
+  "左眼近视度数": "left_myopia",
+  "右眼近视度数": "right_myopia",
+  "民族": "ethnicity",
+  "职业": "occupation",
+  "专业": "majors",
+  "受教育年限": "education_years",
+  "身高": "height_cm",
+  "体重": "weight_kg",
+  "头围": "head_circumference_cm",
+};
+
+function normalizeManualProfileValue(fieldLabel, rawValue) {
+  const text = String(rawValue ?? "").trim();
+  if (!text) return undefined;
+  if (fieldLabel === "专业") {
+    const list = text.split(/[;,，、\s]+/).map((item) => String(item || "").trim()).filter(Boolean);
+    return list.length ? list : undefined;
+  }
+  if (["年龄", "左眼近视度数", "右眼近视度数", "受教育年限", "身高", "体重", "头围"].includes(fieldLabel)) {
+    const num = Number(text);
+    return Number.isFinite(num) ? String(num) : undefined;
+  }
+  return text;
+}
+
+async function promptAndAddParticipantToEmptySlot(slot) {
+  const experimentUid = String(adminEditState.experiment?.experiment_uid || "").trim();
+  const slotId = Number(slot?.originalId);
+  if (!experimentUid || !Number.isFinite(slotId)) {
+    alert("该时间块尚未保存，请先点击“保存排期”后再手动添加被试。");
+    return;
+  }
+  const name = String(prompt("请输入被试姓名", "") || "").trim();
+  if (!name) return;
+  const phone = String(prompt("请输入被试手机号（用于自动匹配被试库）", "") || "").trim();
+  if (!phone) return;
+
+  let matchData;
+  try {
+    matchData = await apiRequest("/admin/experiment/participant/match", {
+      method: "POST",
+      json: {
+        experiment_uid: experimentUid,
+        name,
+        phone,
+      },
+    });
+  } catch (error) {
+    alert(error.message || "被试匹配失败");
+    return;
+  }
+
+  const profileDefaults = matchData?.profile && typeof matchData.profile === "object" ? matchData.profile : {};
+  const requiredFields = Array.isArray(matchData?.required_fields) ? matchData.required_fields : [];
+  const missingFields = new Set(Array.isArray(matchData?.missing_fields) ? matchData.missing_fields : requiredFields);
+  const profileUpdates = {};
+
+  for (const fieldLabel of requiredFields) {
+    const key = MANUAL_PARTICIPANT_FIELD_MAP[fieldLabel];
+    if (!key) continue;
+    const preset = profileDefaults[key];
+    const hasPreset = Array.isArray(preset)
+      ? preset.length > 0
+      : !(preset === undefined || preset === null || String(preset).trim() === "");
+    if (hasPreset && !missingFields.has(fieldLabel)) continue;
+    const hint = fieldLabel === "专业" ? "可输入多个，用逗号分隔" : "";
+    const input = prompt(`请填写：${fieldLabel}${hint ? `（${hint}）` : ""}`, Array.isArray(preset) ? preset.join("、") : String(preset || ""));
+    if (input === null) return;
+    const normalized = normalizeManualProfileValue(fieldLabel, input);
+    if (normalized === undefined) {
+      alert(`${fieldLabel} 不能为空`);
+      return;
+    }
+    profileUpdates[key] = normalized;
+  }
+
+  if (!matchData?.matched) {
+    const confirmNew = window.confirm("未匹配到被试库中的用户，将按“临时新增被试”录入。\n这样添加，系统不会记录该被试的实验参与历史。\n\n确认继续？");
+    if (!confirmNew) return;
+  }
+
+  try {
+    await apiRequest("/admin/experiment/participant/manual-add", {
+      method: "POST",
+      json: {
+        experiment_uid: experimentUid,
+        slot_id: slotId,
+        name,
+        phone,
+        profile_updates: profileUpdates,
+      },
+    });
+    setStatus(adminExperimentStatus, "已手动添加被试");
+    await loadAdminExperimentDetail(experimentUid);
+  } catch (error) {
+    alert(error.message || "手动添加被试失败");
+  }
+}
+
 function safeJsonParse(value, fallback) {
   try {
     return JSON.parse(value);
@@ -2135,7 +2239,10 @@ function findSlotDayBody(slotEl, slotDate) {
 }
 
 function resolveTimelineDateFromPoint(slotEl, clientX) {
-  const grid = slotEl?.closest?.(".schedule-grid");
+  const grid = slotEl?.closest?.(".schedule-grid")
+    || document.querySelector("#adminEditScheduleGrid.schedule-grid")
+    || document.querySelector("#scheduleGrid.schedule-grid")
+    || document.querySelector("#unifiedScheduleGrid.schedule-grid");
   if (!grid) return null;
   const timelines = Array.from(grid.querySelectorAll(".schedule-timeline[data-date]"));
   if (!timelines.length) return null;
@@ -2300,7 +2407,7 @@ function startTouchResize(slotEl, slot, stateRef, renderFn, startY, preferredEdg
   document.addEventListener("touchcancel", onEnd);
 }
 
-function attachMobileSlotHandlers(slotEl, slot, stateRef, renderFn, onDelete, onCapacityEdit, onLockedTap, getLongPressTitle, getLockedMenuActions) {
+function attachMobileSlotHandlers(slotEl, slot, stateRef, renderFn, onDelete, onCapacityEdit, onLockedTap, getLongPressTitle, getLockedMenuActions, getExtraMenuActions = null) {
   let pressTimer = null;
   let moved = false;
   let longPressed = false;
@@ -2332,7 +2439,7 @@ function attachMobileSlotHandlers(slotEl, slot, stateRef, renderFn, onDelete, on
         }], titleText);
         return;
       }
-      openSlotActionMenu(startX, startY, [
+      const baseActions = [
         {
           label: "拖动",
           onClick: () => startTouchDrag(slotEl, slot, stateRef, renderFn),
@@ -2356,7 +2463,11 @@ function attachMobileSlotHandlers(slotEl, slot, stateRef, renderFn, onDelete, on
           danger: true,
           onClick: onDelete,
         },
-      ], titleText);
+      ];
+      const extraActions = typeof getExtraMenuActions === "function"
+        ? (getExtraMenuActions(slot) || []).filter(Boolean)
+        : [];
+      openSlotActionMenu(startX, startY, [...extraActions, ...baseActions], titleText);
     }, 500);
   }, { passive: true });
 
@@ -2458,7 +2569,9 @@ function enableSlotDrag(slotEl, slot, stateRef, renderFn) {
 
   slotEl.addEventListener("touchmove", (event) => {
     if (!dragging) return;
-    const fakeEvent = { clientY: event.touches[0].clientY };
+    const touch = event.touches?.[0];
+    if (!touch) return;
+    const fakeEvent = { clientY: touch.clientY, clientX: touch.clientX };
     onMove(fakeEvent);
     event.preventDefault();
   }, { passive: false });
@@ -2997,8 +3110,42 @@ function renderAdminEditScheduleGrid() {
           }
         };
         const lockedTap = () => {};
+        const extraMenuActions = (targetSlot) => {
+          if (targetSlot.locked || targetSlot.sourceType) return [];
+          const hasParticipants = Array.isArray(targetSlot.participants) && targetSlot.participants.length > 0;
+          if (hasParticipants) return [];
+          return [{
+            label: "手动添加被试",
+            onClick: () => {
+              promptAndAddParticipantToEmptySlot(targetSlot);
+            },
+          }];
+        };
         if (slot.sourceType) {
           bindSlotOwnershipTooltip(slotEl, slot, getAdminSlotExperimentName);
+        }
+        if (!slot.locked && !slot.sourceType && (!Array.isArray(slot.participants) || slot.participants.length === 0)) {
+          slotEl.addEventListener("contextmenu", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            openSlotActionMenu(event.clientX, event.clientY, [
+              {
+                label: "手动添加被试",
+                onClick: () => {
+                  promptAndAddParticipantToEmptySlot(slot);
+                },
+              },
+              {
+                label: "设置人数",
+                onClick: editCapacity,
+              },
+              {
+                label: "删除",
+                danger: true,
+                onClick: deleteSlot,
+              },
+            ], "空时间块操作");
+          });
         }
         const lockedMenuActions = () => {
           if (!participantContactRows.length || slot.sourceType) {
@@ -3046,7 +3193,8 @@ function renderAdminEditScheduleGrid() {
           editCapacity,
           lockedTap,
           () => `所属实验：${getAdminSlotExperimentName(slot)}`,
-          lockedMenuActions
+          lockedMenuActions,
+          extraMenuActions
         );
 
         if (!slot.locked) {
@@ -3180,7 +3328,9 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
 
   slotEl.addEventListener("touchmove", (event) => {
     if (!dragging) return;
-    const fakeEvent = { clientY: event.touches[0].clientY };
+    const touch = event.touches?.[0];
+    if (!touch) return;
+    const fakeEvent = { clientY: touch.clientY, clientX: touch.clientX };
     onMove(fakeEvent);
     event.preventDefault();
   }, { passive: false });
@@ -3372,10 +3522,12 @@ function parseQuotaConditionDisplay(conditionText, lastField = "") {
 
 function parseQuotaRulesText(rawText) {
   const lines = String(rawText || "").split(/\n+/).map((line) => line.trim()).filter(Boolean);
-  const rules = [];
-  lines.forEach((line) => {
+  const parsedLines = [];
+  lines.forEach((line, lineIndex) => {
     let lastField = "";
-    line.split("&").map((part) => part.trim()).filter(Boolean).forEach((part) => {
+    let lineTotal = 0;
+    const items = [];
+    line.split("&").map((part) => part.trim()).filter(Boolean).forEach((part, itemIndex) => {
       const splitIndex = part.lastIndexOf("*");
       if (splitIndex <= 0) return;
       const conditionText = part.slice(0, splitIndex).trim();
@@ -3385,46 +3537,86 @@ function parseQuotaRulesText(rawText) {
       const parsed = parseQuotaConditionDisplay(conditionText, lastField);
       if (parsed.field) lastField = parsed.field;
       if (!parsed.label) return;
-      rules.push({ label: parsed.label, capacity });
+      lineTotal += capacity;
+      items.push({
+        label: parsed.label,
+        capacity,
+        lineIndex,
+        itemIndex,
+        key: `L${lineIndex}-I${itemIndex}`,
+      });
     });
+    if (items.length) {
+      parsedLines.push({
+        lineIndex,
+        total: lineTotal,
+        items,
+      });
+    }
   });
-  return rules;
+  const totals = parsedLines.map((line) => Number(line.total) || 0).filter((v) => v > 0);
+  const totalCapacity = totals.length
+    ? (totals.every((v) => v === totals[0]) ? totals[0] : Math.max(...totals))
+    : 0;
+  return {
+    lines: parsedLines,
+    totalCapacity,
+  };
 }
 
 function getQuotaTotalFromText(rawText) {
-  return parseQuotaRulesText(rawText).reduce((sum, item) => sum + (Number(item.capacity) || 0), 0);
+  return Number(parseQuotaRulesText(rawText).totalCapacity || 0);
 }
 
 function collectQuotaAssignedCounts(slots) {
-  const counts = new Map();
+  const byKey = new Map();
+  const byLabel = new Map();
   let recruited = 0;
   (Array.isArray(slots) ? slots : []).forEach((slot) => {
-    const participants = parseSlotParticipants(slot);
+    const participants = Array.isArray(slot?.participants)
+      ? slot.participants
+      : parseSlotParticipants(slot);
     participants.forEach((participant) => {
       const status = String(participant?.participant_status || participant?.status || "").toLowerCase();
       if (status === "rejected" || participant?.rejected === true) return;
       recruited += 1;
       const items = Array.isArray(participant?.quota_items) ? participant.quota_items : [];
-      const uniqueItems = Array.from(new Set(items.map((item) => String(item || "").trim()).filter(Boolean)));
-      uniqueItems.forEach((item) => {
-        counts.set(item, (counts.get(item) || 0) + 1);
+      const seen = new Set();
+      items.forEach((item) => {
+        if (item && typeof item === "object") {
+          const key = `L${Number(item.lineIndex)}-I${Number(item.itemIndex)}`;
+          if (!seen.has(key) && /^L\d+-I\d+$/.test(key)) {
+            byKey.set(key, (byKey.get(key) || 0) + 1);
+            seen.add(key);
+          }
+          return;
+        }
+        const label = String(item || "").trim();
+        if (!label || seen.has(label)) return;
+        byLabel.set(label, (byLabel.get(label) || 0) + 1);
+        seen.add(label);
       });
     });
   });
-  return { counts, recruited };
+  return { byKey, byLabel, recruited };
 }
 
 function buildQuotaUsageTooltipText(rawQuotaText, slots, fallbackRecruited = 0) {
   const rules = parseQuotaRulesText(rawQuotaText);
-  if (!rules.length) {
+  if (!rules.lines?.length) {
     return "名额分配未设置";
   }
   const usage = collectQuotaAssignedCounts(slots);
-  const totalCapacity = rules.reduce((sum, item) => sum + (Number(item.capacity) || 0), 0);
+  const totalCapacity = Number(rules.totalCapacity || 0);
   const recruited = usage.recruited || Number(fallbackRecruited) || 0;
-  const lines = rules.map((item) => {
-    const filled = usage.counts.get(item.label) || 0;
-    return `${item.label}: ${filled}/${item.capacity}`;
+  const lines = [];
+  (rules.lines || []).forEach((line) => {
+    (line.items || []).forEach((item) => {
+      const byKey = usage.byKey.get(item.key);
+      const byLabel = usage.byLabel.get(item.label);
+      const filled = Number.isFinite(byKey) ? byKey : (byLabel || 0);
+      lines.push(`${item.label}: ${filled}/${item.capacity}`);
+    });
   });
   lines.push(`总计: ${recruited}/${totalCapacity}`);
   return lines.join("\n");
@@ -4247,8 +4439,12 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
           <div class="blacklist-config">
             <strong>黑名单设置（姓名/支付宝手机号/微信号）</strong>
             <div class="blacklist-actions">
-              <button type="button" class="ghost" id="adminEditDownloadBlacklistTemplateBtn">下载黑名单模板</button>
-              <input type="file" id="adminEditBlacklistFileInput" accept=".xlsx,.xls" />
+              <div class="blacklist-actions-row">
+                <button type="button" class="ghost" id="adminEditDownloadBlacklistTemplateBtn">下载黑名单模板</button>
+              </div>
+              <div class="blacklist-actions-row">
+                <input type="file" id="adminEditBlacklistFileInput" accept=".xlsx,.xls" />
+              </div>
             </div>
             <div class="hint" id="adminEditBlacklistStatus">未上传黑名单文件</div>
           </div>
@@ -4990,8 +5186,9 @@ function showTooltip(text, x, y, options = {}) {
   tip.className = `tooltip${options?.selectable ? " selectable" : ""}`;
 
   if (options?.selectable) {
+    const titleText = String(options?.title || "联系方式").trim() || "联系方式";
     tip.innerHTML = `
-      <div class="tooltip-title">联系方式</div>
+      <div class="tooltip-title">${escapeHtml(titleText)}</div>
       <div class="tooltip-body"></div>
       <div class="tooltip-hint">可拖动选中文字复制，或双击气泡自动复制</div>
     `;

@@ -1224,20 +1224,19 @@ body.is-admin .split {
 }
 
 .blacklist-actions {
-  display: flex;
-  gap: 0.6rem;
-  align-items: center;
-  flex-wrap: wrap;
+  display: grid;
+  gap: 0.5rem;
   width: 100%;
   min-width: 0;
 }
 
-.blacklist-actions button {
-  flex-shrink: 0;
+.blacklist-actions-row {
+  width: 100%;
+  min-width: 0;
 }
 
+.blacklist-actions button,
 .blacklist-actions input[type="file"] {
-  flex: 1;
   min-width: 0;
   width: 100%;
   max-width: 100%;
@@ -1245,8 +1244,7 @@ body.is-admin .split {
 
 @media (max-width: 640px) {
   .blacklist-actions {
-    flex-direction: column;
-    align-items: stretch;
+    gap: 0.45rem;
     width: 100%;
   }
 
