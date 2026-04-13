@@ -2552,7 +2552,6 @@ function enableSlotDrag(slotEl, slot, stateRef, renderFn) {
 
   slotEl.addEventListener("mousedown", (event) => {
     if (event.button !== 0) return;
-    event.preventDefault();
     dragging = false;
     startX = event.clientX;
     startY = event.clientY;
@@ -3313,7 +3312,6 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
 
   slotEl.addEventListener("mousedown", (event) => {
     if (event.button !== 0) return;
-    event.preventDefault();
     dragging = false;
     startX = event.clientX;
     startY = event.clientY;
@@ -3347,74 +3345,6 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
   slotEl.addEventListener("touchend", () => {
     if (pressTimer) clearTimeout(pressTimer);
     if (dragging) onUp();
-  });
-}
-
-function enableUnifiedSlotDrag(slotEl, slot, stateRef, renderFn) {
-  if (isDateBeforeToday(new Date(`${slot.date}T00:00:00`))) return;
-  if (!slot.can_edit) return;
-  if (IS_COARSE_POINTER) return;
-  const dragGrid = slotEl?.closest?.(".schedule-grid") || null;
-  let startX = 0;
-  let startY = 0;
-  let startMin = slot.startMin;
-  let endMin = slot.endMin;
-  let dragging = false;
-
-  const onMove = (event) => {
-    const dx = event.clientX - startX;
-    const dy = event.clientY - startY;
-    if (!dragging) {
-      if (Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
-      dragging = true;
-    }
-
-    const duration = endMin - startMin;
-    const delta = event.clientY - startY;
-    const step = Math.round(delta / (PX_PER_MIN * 10)) * 10;
-    const targetDate = resolveTimelineDateFromPoint(slotEl, event.clientX, { gridEl: dragGrid }) || slot.date;
-    if (targetDate && !isDateBeforeToday(new Date(`${targetDate}T00:00:00`))) {
-      slot.date = targetDate;
-    }
-
-    let nextStart = Math.max(0, Math.min(1440 - duration, startMin + step));
-    if (slot.date === formatLocalDate(new Date())) {
-      const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
-      if (startMin >= nowMin && nextStart < nowMin) nextStart = nowMin;
-    }
-    slot.startMin = nextStart;
-    slot.endMin = nextStart + duration;
-
-    updateSlotElementPreview(slotEl, slot);
-    if (dragGrid) {
-      const targetTimeline = dragGrid.querySelector(`.schedule-timeline[data-date="${slot.date}"]`);
-      if (targetTimeline && slotEl.parentElement !== targetTimeline) {
-        targetTimeline.appendChild(slotEl);
-      }
-    }
-  };
-
-  const onUp = () => {
-    document.removeEventListener("mousemove", onMove);
-    document.removeEventListener("mouseup", onUp);
-    if (dragging) {
-      mergeOverlappingSlots(stateRef);
-      renderFn();
-    }
-    dragging = false;
-  };
-
-  slotEl.addEventListener("mousedown", (event) => {
-    if (event.button !== 0) return;
-    event.preventDefault();
-    dragging = false;
-    startX = event.clientX;
-    startY = event.clientY;
-    startMin = slot.startMin;
-    endMin = slot.endMin;
-    showSlotNudgeControls({ slot, stateRef, renderFn, mode: "move", edge: null });
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
   });
 }
 
@@ -5958,7 +5888,7 @@ function renderUnifiedScheduleGrid() {
             return false;
           }
           unifiedScheduleState.activeSlotIds.add(slot.id);
-          slotEl.classList.add("active-slot");
+          renderUnifiedScheduleGrid();
         };
         slotEl.addEventListener("mousedown", confirmEditStart, true);
         slotEl.addEventListener("touchstart", confirmEditStart, { passive: false, capture: true });
@@ -6008,7 +5938,7 @@ function renderUnifiedScheduleGrid() {
         );
 
         if (slot.can_edit) {
-          enableUnifiedSlotDrag(slotEl, slot, unifiedScheduleState, () => {
+          enableAdminSlotDrag(slotEl, slot, unifiedScheduleState, () => {
             unifiedScheduleState.dirty = true;
             renderUnifiedScheduleGrid();
           });
