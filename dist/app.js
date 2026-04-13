@@ -344,6 +344,11 @@ const DEFAULT_UNITS = [
   "上海海事大学"
 ];
 
+const FORBIDDEN_BROAD_UNITS = new Set([
+  "中国科学院",
+  "中国科学院大学",
+]);
+
 const DEFAULT_MAJORS = [
   "无",
   "哲学类",
@@ -610,6 +615,15 @@ function setAdminTabsLoading(text = "正在加载实验列表...") {
 function toJsonForm(form) {
   const data = new FormData(form);
   return Object.fromEntries(data.entries());
+}
+
+function normalizeUnitName(value) {
+  return String(value || "").replace(/\s+/g, "").trim();
+}
+
+function isForbiddenBroadUnit(value) {
+  const normalized = normalizeUnitName(value);
+  return FORBIDDEN_BROAD_UNITS.has(normalized);
 }
 
 function createEmptyBlacklistConfig() {
@@ -2113,10 +2127,37 @@ function getTouchById(event, touchId) {
 }
 
 function findSlotDayBody(slotEl, slotDate) {
+  const timeline = document.querySelector(`.schedule-timeline[data-date="${slotDate}"]`);
+  if (timeline) return timeline.closest(".schedule-day-body");
   const direct = slotEl?.closest?.(".schedule-day-body");
   if (direct) return direct;
-  const timeline = document.querySelector(`.schedule-timeline[data-date="${slotDate}"]`);
-  return timeline?.closest?.(".schedule-day-body") || null;
+  return null;
+}
+
+function resolveTimelineDateFromPoint(slotEl, clientX) {
+  const grid = slotEl?.closest?.(".schedule-grid");
+  if (!grid) return null;
+  const timelines = Array.from(grid.querySelectorAll(".schedule-timeline[data-date]"));
+  if (!timelines.length) return null;
+  let picked = null;
+  let nearest = null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  timelines.forEach((timeline) => {
+    const rect = timeline.getBoundingClientRect();
+    const date = String(timeline.dataset.date || "").trim();
+    if (!date) return;
+    if (clientX >= rect.left && clientX <= rect.right) {
+      picked = date;
+      return;
+    }
+    const centerX = rect.left + rect.width / 2;
+    const distance = Math.abs(clientX - centerX);
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearest = date;
+    }
+  });
+  return picked || nearest;
 }
 
 function updateSlotElementPreview(slotEl, slot) {
@@ -2161,6 +2202,10 @@ function startTouchDrag(slotEl, slot, stateRef, renderFn) {
     if (!touch) return;
     const touchMin = getTouchMinute(touch);
     if (touchMin === null) return;
+    const targetDate = resolveTimelineDateFromPoint(slotEl, touch.clientX) || slot.date;
+    if (targetDate && !isDateBeforeToday(new Date(`${targetDate}T00:00:00`))) {
+      slot.date = targetDate;
+    }
     const duration = slot.endMin - slot.startMin;
     let nextStart = Math.round((touchMin - anchorOffsetMin) / 10) * 10;
     nextStart = Math.max(0, Math.min(1440 - duration, nextStart));
@@ -2362,6 +2407,10 @@ function enableSlotDrag(slotEl, slot, stateRef, renderFn) {
     }
     const delta = event.clientY - startY;
     const step = Math.round(delta / (PX_PER_MIN * 10)) * 10;
+    const targetDate = resolveTimelineDateFromPoint(slotEl, event.clientX) || slot.date;
+    if (targetDate && !isDateBeforeToday(new Date(`${targetDate}T00:00:00`))) {
+      slot.date = targetDate;
+    }
     const duration = endMin - startMin;
     let nextStart = Math.max(0, Math.min(1440 - duration, startMin + step));
     if (slot.date === formatLocalDate(new Date())) {
@@ -3071,8 +3120,6 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
   let startMin = slot.startMin;
   let endMin = slot.endMin;
   let dragging = false;
-  let visualDeltaPx = 0;
-  const isDragDebug = () => Boolean(window.DRAG_DEBUG_ENABLED);
 
   const onMove = (event) => {
     const dx = event.clientX - startX;
@@ -3080,11 +3127,13 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
     if (!dragging) {
       if (Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
       dragging = true;
-      if (isDragDebug()) console.log(`[DRAG_START] slot: ${slot.id}, startMin: ${slot.startMin}, y: ${startY}`);
     }
-    visualDeltaPx = dy;
     const delta = event.clientY - startY;
     const step = Math.round(delta / (PX_PER_MIN * 10)) * 10;
+    const targetDate = resolveTimelineDateFromPoint(slotEl, event.clientX) || slot.date;
+    if (targetDate && !isDateBeforeToday(new Date(`${targetDate}T00:00:00`))) {
+      slot.date = targetDate;
+    }
     const duration = endMin - startMin;
     let nextStart = Math.max(0, Math.min(1440 - duration, startMin + step));
     if (slot.date === formatLocalDate(new Date())) {
@@ -3093,23 +3142,15 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
     }
     slot.startMin = nextStart;
     slot.endMin = nextStart + duration;
-    
-    const transformPx = (nextStart - startMin) * PX_PER_MIN;
-    slotEl.style.transform = `translateY(${transformPx}px)`;
-    if (isDragDebug()) {
-      console.log(`[DRAG_MOVE] step: ${step}, nextStart: ${nextStart}, visualTransform: ${transformPx}px`);
-    }
+    renderFn();
   };
 
   const onUp = () => {
     document.removeEventListener("mousemove", onMove);
     document.removeEventListener("mouseup", onUp);
     if (dragging) {
-      if (isDragDebug()) console.log(`[DRAG_END] slot: ${slot.id}, newStartMin: ${slot.startMin}, endMin: ${slot.endMin}`);
-      slotEl.style.transform = "";
       mergeOverlappingSlots(stateRef);
       renderFn();
-      if (isDragDebug()) console.log(`[RENDER_COMPLETE] renderFn called at ${new Date().toISOString()}`);
     }
     dragging = false;
   };
@@ -3124,10 +3165,6 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
     showSlotNudgeControls({ slot, stateRef, renderFn, mode: "move", edge: null });
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
-    if (isDragDebug()) {
-      console.log(`[DRAG_CAPTURE] startX: ${startX}, startY: ${startY}, slot.startMin: ${startMin}`);
-      console.log(`[SCROLL_BEFORE] window.scrollY: ${window.scrollY}, scrollParent: ${unifiedScheduleGrid?.scrollTop || 'N/A'}`);
-    }
   });
 
   let pressTimer = null;
@@ -3138,7 +3175,6 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
       startY = event.touches[0].clientY;
       startMin = slot.startMin;
       endMin = slot.endMin;
-      if (isDragDebug()) console.log(`[TOUCH_START] startY: ${startY}, startMin: ${startMin}`);
     }, 350);
   }, { passive: true });
 
@@ -3272,10 +3308,14 @@ async function loadUnits() {
   try {
     const data = await apiRequest("/units", { method: "GET" });
     const merged = new Set([...DEFAULT_UNITS, ...(data.units || [])]);
-    state.units = Array.from(merged).sort();
+    state.units = Array.from(merged)
+      .map((item) => String(item || "").trim())
+      .filter(Boolean)
+      .filter((item) => !isForbiddenBroadUnit(item))
+      .sort();
     renderUnitSuggestions();
   } catch {
-    state.units = [...DEFAULT_UNITS];
+    state.units = [...DEFAULT_UNITS].filter((item) => !isForbiddenBroadUnit(item));
   }
 }
 
@@ -3293,8 +3333,9 @@ async function loadMajors() {
 function renderUnitSuggestions(query = "") {
   if (!unitSuggestions) return;
   const keyword = String(query || "").trim();
+  const source = (state.units || DEFAULT_UNITS).filter((item) => !isForbiddenBroadUnit(item));
   const list = keyword
-    ? (state.units || DEFAULT_UNITS).filter((item) => item.includes(keyword))
+    ? source.filter((item) => item.includes(keyword))
     : [];
   unitSuggestions.innerHTML = "";
   if (list.length === 0) {
@@ -3313,6 +3354,117 @@ function renderUnitSuggestions(query = "") {
     unitSuggestions.appendChild(el);
   });
   unitSuggestions.classList.add("active");
+}
+
+function parseQuotaConditionDisplay(conditionText, lastField = "") {
+  const raw = String(conditionText || "").trim();
+  if (!raw) return { field: lastField, label: "" };
+  if (raw.toUpperCase() === "ALL") return { field: "", label: "ALL" };
+  const fieldMatch = raw.match(/^(性别|年龄|所在地区|左\/右利手|左眼近视度数|右眼近视度数|民族|职业|专业|受教育年限|身高|体重|头围)/);
+  if (fieldMatch) {
+    return { field: fieldMatch[1], label: raw };
+  }
+  if (!lastField) {
+    return { field: "", label: raw };
+  }
+  return { field: lastField, label: `${lastField}${raw}` };
+}
+
+function parseQuotaRulesText(rawText) {
+  const lines = String(rawText || "").split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const rules = [];
+  lines.forEach((line) => {
+    let lastField = "";
+    line.split("&").map((part) => part.trim()).filter(Boolean).forEach((part) => {
+      const splitIndex = part.lastIndexOf("*");
+      if (splitIndex <= 0) return;
+      const conditionText = part.slice(0, splitIndex).trim();
+      const capacityText = part.slice(splitIndex + 1).trim();
+      const capacity = Number(capacityText);
+      if (!Number.isFinite(capacity) || capacity < 0) return;
+      const parsed = parseQuotaConditionDisplay(conditionText, lastField);
+      if (parsed.field) lastField = parsed.field;
+      if (!parsed.label) return;
+      rules.push({ label: parsed.label, capacity });
+    });
+  });
+  return rules;
+}
+
+function getQuotaTotalFromText(rawText) {
+  return parseQuotaRulesText(rawText).reduce((sum, item) => sum + (Number(item.capacity) || 0), 0);
+}
+
+function collectQuotaAssignedCounts(slots) {
+  const counts = new Map();
+  let recruited = 0;
+  (Array.isArray(slots) ? slots : []).forEach((slot) => {
+    const participants = parseSlotParticipants(slot);
+    participants.forEach((participant) => {
+      const status = String(participant?.participant_status || participant?.status || "").toLowerCase();
+      if (status === "rejected" || participant?.rejected === true) return;
+      recruited += 1;
+      const items = Array.isArray(participant?.quota_items) ? participant.quota_items : [];
+      const uniqueItems = Array.from(new Set(items.map((item) => String(item || "").trim()).filter(Boolean)));
+      uniqueItems.forEach((item) => {
+        counts.set(item, (counts.get(item) || 0) + 1);
+      });
+    });
+  });
+  return { counts, recruited };
+}
+
+function buildQuotaUsageTooltipText(rawQuotaText, slots, fallbackRecruited = 0) {
+  const rules = parseQuotaRulesText(rawQuotaText);
+  if (!rules.length) {
+    return "名额分配未设置";
+  }
+  const usage = collectQuotaAssignedCounts(slots);
+  const totalCapacity = rules.reduce((sum, item) => sum + (Number(item.capacity) || 0), 0);
+  const recruited = usage.recruited || Number(fallbackRecruited) || 0;
+  const lines = rules.map((item) => {
+    const filled = usage.counts.get(item.label) || 0;
+    return `${item.label}: ${filled}/${item.capacity}`;
+  });
+  lines.push(`总计: ${recruited}/${totalCapacity}`);
+  return lines.join("\n");
+}
+
+function bindQuotaUsageTooltip(targets, getText) {
+  const elements = (Array.isArray(targets) ? targets : [targets]).filter(Boolean);
+  elements.forEach((target) => {
+    let pressTimer = null;
+    target.addEventListener("mouseenter", (event) => {
+      const text = String(getText?.() || "").trim();
+      if (!text) return;
+      showTooltip(text, event.pageX + 8, event.pageY + 8, { durationMs: 0, selectable: true, title: "名额分配" });
+    });
+    target.addEventListener("mousemove", (event) => {
+      const text = String(getText?.() || "").trim();
+      if (!text) return;
+      showTooltip(text, event.pageX + 8, event.pageY + 8, { durationMs: 0, selectable: true, title: "名额分配" });
+    });
+    target.addEventListener("mouseleave", () => {
+      scheduleTooltipHide(120);
+    });
+    target.addEventListener("touchstart", (event) => {
+      const touch = event.touches?.[0];
+      if (!touch) return;
+      pressTimer = setTimeout(() => {
+        const text = String(getText?.() || "").trim();
+        if (!text) return;
+        showTooltip(text, touch.clientX + 8, touch.clientY + 8, { durationMs: 2500, selectable: true, title: "名额分配" });
+      }, 450);
+    }, { passive: true });
+    target.addEventListener("touchend", () => {
+      if (pressTimer) clearTimeout(pressTimer);
+      pressTimer = null;
+    });
+    target.addEventListener("touchcancel", () => {
+      if (pressTimer) clearTimeout(pressTimer);
+      pressTimer = null;
+    });
+  });
 }
 
 function normalizeMajorValue(value) {
@@ -3752,7 +3904,10 @@ function renderAdminTabs() {
     tab.textContent = exp.name;
     const updatedLabel = exp.updated_at ? new Date(exp.updated_at).toLocaleString() : "-";
     const recruited = exp.recruited_count ?? 0;
-    const capacity = exp.capacity_total ?? 0;
+    const quotaCapacity = getQuotaTotalFromText(exp.quotas_text || "");
+    const capacity = Number(exp.schedule_required) === 1 && quotaCapacity > 0
+      ? quotaCapacity
+      : (exp.capacity_total ?? quotaCapacity ?? 0);
     tab.title = `ID: ${exp.experiment_uid}\n类型: ${exp.type}\n已招募: ${recruited}/${capacity}\n最后修改: ${updatedLabel}`;
     tab.addEventListener("click", () => selectAdminTab(exp.experiment_uid));
     const openExperimentMenu = (x, y) => {
@@ -4128,6 +4283,7 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
   const deleteBtn = panel.querySelector("#deleteExperimentBtn");
   const editConditions = panel.querySelector("#adminEditConditions");
   const editQuota = panel.querySelector("#adminEditQuota");
+  const editQuotaLabel = editQuota?.closest("label");
   const editScheduleSave = panel.querySelector("#adminEditScheduleSave");
   const editSchedulePrev = panel.querySelector("#adminEditSchedulePrev");
   const editScheduleToday = panel.querySelector("#adminEditScheduleToday");
@@ -4172,6 +4328,7 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
   const hostedReuploadStatus = panel.querySelector("#adminHostedReuploadStatus");
   let editBlacklistConfig = normalizeBlacklistConfigValue(safeJsonParse(experiment.blacklist_json, {}));
   setBlacklistStatus(editBlacklistStatus, editBlacklistConfig);
+  bindQuotaUsageTooltip([editQuotaLabel, editQuota], () => buildQuotaUsageTooltipText(editQuota?.value || "", slots, experiment.recruited_count || 0));
 
   editDownloadBlacklistTemplateBtn?.addEventListener("click", () => {
     downloadBlacklistTemplateFile();
@@ -5188,6 +5345,23 @@ const unifiedScheduleState = {
   ownerColors: new Map(),
 };
 
+let unifiedScheduleResizeObserver = null;
+
+function attachUnifiedScheduleResizeObserver(container) {
+  if (!container || unifiedScheduleResizeObserver) return;
+  unifiedScheduleResizeObserver = new ResizeObserver(() => {
+    const nextCount = getDayColumnCount(container);
+    if (nextCount === unifiedScheduleState.dayCount) return;
+    unifiedScheduleState.dayCount = nextCount;
+    if (unifiedScheduleState.autoStart) {
+      unifiedScheduleState.weekStart = normalizeStartDate(new Date(), nextCount);
+    }
+    if (unifiedScheduleState.activeDayIndex >= nextCount) unifiedScheduleState.activeDayIndex = 0;
+    renderUnifiedScheduleGrid();
+  });
+  unifiedScheduleResizeObserver.observe(container);
+}
+
 function formatDateCn(date) {
   const d = date instanceof Date ? date : new Date(date);
   return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
@@ -5347,12 +5521,20 @@ function renderUnifiedScheduleLocationTabs() {
 
 function renderUnifiedScheduleGrid() {
   if (!unifiedScheduleGrid) return;
+  attachUnifiedScheduleResizeObserver(unifiedScheduleGrid);
   const prevDays = unifiedScheduleGrid.querySelector(".schedule-days");
   if (prevDays) scheduleScrollState.unified = prevDays.scrollLeft;
   unifiedScheduleGrid.innerHTML = "";
   let dayCount = getDayColumnCount(unifiedScheduleGrid);
   if (unifiedScheduleGrid.clientWidth < 200) {
     dayCount = unifiedScheduleState.dayCount || dayCount;
+    if (!unifiedScheduleState.layoutRetry) {
+      unifiedScheduleState.layoutRetry = true;
+      requestAnimationFrame(() => {
+        unifiedScheduleState.layoutRetry = false;
+        renderUnifiedScheduleGrid();
+      });
+    }
   }
   if (unifiedScheduleState.dayCount !== dayCount) {
     unifiedScheduleState.dayCount = dayCount;
@@ -5993,6 +6175,9 @@ majorInput?.addEventListener("focus", (event) => {
   renderMajorSuggestions(event.target.value);
 });
 
+const adminQuotaLabel = adminQuota?.closest("label");
+bindQuotaUsageTooltip([adminQuotaLabel, adminQuota], () => buildQuotaUsageTooltipText(adminQuota?.value || "", [], 0));
+
 majorInput?.addEventListener("keydown", (event) => {
   if (event.key === "Enter" || event.key === ",") {
     event.preventDefault();
@@ -6112,9 +6297,7 @@ window.addEventListener("popstate", async () => {
 });
 
 window.addEventListener("resize", () => {
-  if (!schedulePage?.classList.contains("hidden")) {
-    renderUnifiedScheduleGrid();
-  }
+  syncAdminHelpCardHeight();
 }, { passive: true });
 
 uploadZone?.addEventListener("click", () => {
@@ -6376,6 +6559,10 @@ registerForm.addEventListener("submit", async (event) => {
   setStatus(registerStatus, "提交中...");
   try {
     const payload = toJsonForm(registerForm);
+    if (isForbiddenBroadUnit(payload.unit)) {
+      setStatus(registerStatus, "请明确到具体研究所/院系", true);
+      return;
+    }
     if (payload.password !== payload.password_confirm) {
       setStatus(registerStatus, "两次输入的密码不一致", true);
       return;
@@ -6436,6 +6623,10 @@ profileForm.addEventListener("submit", async (event) => {
   try {
     syncMajorsHidden();
     const updates = toJsonForm(profileForm);
+    if (isForbiddenBroadUnit(updates.unit)) {
+      setStatus(profileStatus, "请明确到具体研究所/院系", true);
+      return;
+    }
     await apiRequest("/profile/update", { method: "POST", json: { updates } });
     setStatus(profileStatus, "已保存");
     await loadProfile();
