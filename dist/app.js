@@ -3267,10 +3267,11 @@ function toggleAdminSlotSelection(id) {
   }
 }
 
-function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
+function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn, options = null) {
   if (isDateBeforeToday(new Date(`${slot.date}T00:00:00`))) return;
   if (IS_COARSE_POINTER) return;
   const dragGrid = slotEl?.closest?.(".schedule-grid") || null;
+  const deferRender = Boolean(options?.deferRender);
   let startX = 0;
   let startY = 0;
   let startMin = slot.startMin;
@@ -3298,7 +3299,17 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
     }
     slot.startMin = nextStart;
     slot.endMin = nextStart + duration;
-    renderFn();
+    if (deferRender) {
+      updateSlotElementPreview(slotEl, slot);
+      if (dragGrid) {
+        const targetTimeline = dragGrid.querySelector(`.schedule-timeline[data-date="${slot.date}"]`);
+        if (targetTimeline && slotEl.parentElement !== targetTimeline) {
+          targetTimeline.appendChild(slotEl);
+        }
+      }
+    } else {
+      renderFn();
+    }
   };
 
   const onUp = () => {
@@ -5891,11 +5902,6 @@ function renderUnifiedScheduleGrid() {
           }
           unifiedScheduleState.activeSlotIds.add(slot.id);
           slotEl.classList.add("active-slot");
-          requestAnimationFrame(() => {
-            if (unifiedScheduleState.activeSlotIds.has(slot.id)) {
-              renderUnifiedScheduleGrid();
-            }
-          });
         };
         slotEl.addEventListener("mousedown", confirmEditStart, true);
         slotEl.addEventListener("touchstart", confirmEditStart, { passive: false, capture: true });
@@ -5948,7 +5954,7 @@ function renderUnifiedScheduleGrid() {
           enableAdminSlotDrag(slotEl, slot, unifiedScheduleState, () => {
             unifiedScheduleState.dirty = true;
             renderUnifiedScheduleGrid();
-          });
+          }, { deferRender: true });
           enableSlotResize(slotEl, slot, () => {
             unifiedScheduleState.dirty = true;
             renderUnifiedScheduleGrid();
