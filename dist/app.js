@@ -2122,6 +2122,12 @@ function bindSlotOwnershipTooltip(slotEl, slot, getExperimentName) {
   slotEl.addEventListener("mouseleave", () => {
     removeTooltip();
   });
+  slotEl.addEventListener("mousedown", () => {
+    removeTooltip();
+  }, { passive: true });
+  slotEl.addEventListener("touchstart", () => {
+    removeTooltip();
+  }, { passive: true });
 }
 
 function applySlotNudge(delta) {
@@ -2238,11 +2244,9 @@ function findSlotDayBody(slotEl, slotDate) {
   return null;
 }
 
-function resolveTimelineDateFromPoint(slotEl, clientX) {
-  const grid = slotEl?.closest?.(".schedule-grid")
-    || document.querySelector("#adminEditScheduleGrid.schedule-grid")
-    || document.querySelector("#scheduleGrid.schedule-grid")
-    || document.querySelector("#unifiedScheduleGrid.schedule-grid");
+function resolveTimelineDateFromPoint(slotEl, clientX, options = null) {
+  const grid = options?.gridEl
+    || (slotEl?.isConnected ? slotEl.closest(".schedule-grid") : null);
   if (!grid) return null;
   const timelines = Array.from(grid.querySelectorAll(".schedule-timeline[data-date]"));
   if (!timelines.length) return null;
@@ -2280,6 +2284,7 @@ function updateSlotElementPreview(slotEl, slot) {
 function startTouchDrag(slotEl, slot, stateRef, renderFn) {
   let activeTouchId = null;
   let anchorOffsetMin = 0;
+  const dragGrid = slotEl?.closest?.(".schedule-grid") || null;
   showSlotNudgeControls({ slot, stateRef, renderFn, mode: "move", edge: null });
 
   const getTouchMinute = (touch) => {
@@ -2309,7 +2314,7 @@ function startTouchDrag(slotEl, slot, stateRef, renderFn) {
     if (!touch) return;
     const touchMin = getTouchMinute(touch);
     if (touchMin === null) return;
-    const targetDate = resolveTimelineDateFromPoint(slotEl, touch.clientX) || slot.date;
+    const targetDate = resolveTimelineDateFromPoint(slotEl, touch.clientX, { gridEl: dragGrid }) || slot.date;
     if (targetDate && !isDateBeforeToday(new Date(`${targetDate}T00:00:00`))) {
       slot.date = targetDate;
     }
@@ -2503,6 +2508,7 @@ function enableSlotDrag(slotEl, slot, stateRef, renderFn) {
   if (isDateBeforeToday(new Date(`${slot.date}T00:00:00`))) return;
   if (slot.locked) return;
   if (IS_COARSE_POINTER) return;
+  const dragGrid = slotEl?.closest?.(".schedule-grid") || null;
   let startX = 0;
   let startY = 0;
   let startMin = slot.startMin;
@@ -2518,7 +2524,7 @@ function enableSlotDrag(slotEl, slot, stateRef, renderFn) {
     }
     const delta = event.clientY - startY;
     const step = Math.round(delta / (PX_PER_MIN * 10)) * 10;
-    const targetDate = resolveTimelineDateFromPoint(slotEl, event.clientX) || slot.date;
+    const targetDate = resolveTimelineDateFromPoint(slotEl, event.clientX, { gridEl: dragGrid }) || slot.date;
     if (targetDate && !isDateBeforeToday(new Date(`${targetDate}T00:00:00`))) {
       slot.date = targetDate;
     }
@@ -3263,6 +3269,7 @@ function toggleAdminSlotSelection(id) {
 function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
   if (isDateBeforeToday(new Date(`${slot.date}T00:00:00`))) return;
   if (IS_COARSE_POINTER) return;
+  const dragGrid = slotEl?.closest?.(".schedule-grid") || null;
   let startX = 0;
   let startY = 0;
   let startMin = slot.startMin;
@@ -3278,7 +3285,7 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
     }
     const delta = event.clientY - startY;
     const step = Math.round(delta / (PX_PER_MIN * 10)) * 10;
-    const targetDate = resolveTimelineDateFromPoint(slotEl, event.clientX) || slot.date;
+    const targetDate = resolveTimelineDateFromPoint(slotEl, event.clientX, { gridEl: dragGrid }) || slot.date;
     if (targetDate && !isDateBeforeToday(new Date(`${targetDate}T00:00:00`))) {
       slot.date = targetDate;
     }
@@ -5718,6 +5725,7 @@ function renderUnifiedScheduleLocationTabs() {
 
 function renderUnifiedScheduleGrid() {
   if (!unifiedScheduleGrid) return;
+  removeTooltip();
   attachUnifiedScheduleResizeObserver(unifiedScheduleGrid);
   const prevDays = unifiedScheduleGrid.querySelector(".schedule-days");
   if (prevDays) scheduleScrollState.unified = prevDays.scrollLeft;
@@ -5903,6 +5911,7 @@ function renderUnifiedScheduleGrid() {
 
         const deleteSlot = () => {
           if (!slot.can_edit) return;
+          removeTooltip();
           unifiedScheduleState.slots = unifiedScheduleState.slots.filter((item) => item.id !== slot.id);
           unifiedScheduleState.selectedIds.delete(slot.id);
           unifiedScheduleState.dirty = true;
@@ -5992,6 +6001,7 @@ function closeSchedulePage(pushHistory = true) {
   if (pushHistory && isSchedulePath()) {
     history.pushState({}, "", "/");
   }
+  removeTooltip();
   setSchedulePageMode(false);
 }
 
@@ -6372,9 +6382,6 @@ majorInput?.addEventListener("focus", (event) => {
   renderMajorSuggestions(event.target.value);
 });
 
-const adminQuotaLabel = adminQuota?.closest("label");
-bindQuotaUsageTooltip([adminQuotaLabel, adminQuota], () => buildQuotaUsageTooltipText(adminQuota?.value || "", [], 0));
-
 majorInput?.addEventListener("keydown", (event) => {
   if (event.key === "Enter" || event.key === ",") {
     event.preventDefault();
@@ -6698,6 +6705,7 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Delete") {
     if (hasUnifiedSelection) {
       event.preventDefault();
+      removeTooltip();
       unifiedScheduleState.slots = unifiedScheduleState.slots.filter((slot) => {
         if (!unifiedScheduleState.selectedIds.has(slot.id)) return true;
         return !slot.can_edit;
