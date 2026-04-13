@@ -2552,6 +2552,7 @@ function enableSlotDrag(slotEl, slot, stateRef, renderFn) {
 
   slotEl.addEventListener("mousedown", (event) => {
     if (event.button !== 0) return;
+    event.preventDefault();
     dragging = false;
     startX = event.clientX;
     startY = event.clientY;
@@ -3312,6 +3313,7 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
 
   slotEl.addEventListener("mousedown", (event) => {
     if (event.button !== 0) return;
+    event.preventDefault();
     dragging = false;
     startX = event.clientX;
     startY = event.clientY;
@@ -5889,6 +5891,11 @@ function renderUnifiedScheduleGrid() {
           }
           unifiedScheduleState.activeSlotIds.add(slot.id);
           slotEl.classList.add("active-slot");
+          requestAnimationFrame(() => {
+            if (unifiedScheduleState.activeSlotIds.has(slot.id)) {
+              renderUnifiedScheduleGrid();
+            }
+          });
         };
         slotEl.addEventListener("mousedown", confirmEditStart, true);
         slotEl.addEventListener("touchstart", confirmEditStart, { passive: false, capture: true });
