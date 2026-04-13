@@ -2122,6 +2122,12 @@ function bindSlotOwnershipTooltip(slotEl, slot, getExperimentName) {
   slotEl.addEventListener("mouseleave", () => {
     removeTooltip();
   });
+  slotEl.addEventListener("mousedown", () => {
+    removeTooltip();
+  }, { passive: true });
+  slotEl.addEventListener("touchstart", () => {
+    removeTooltip();
+  }, { passive: true });
 }
 
 function applySlotNudge(delta) {
@@ -5731,6 +5737,7 @@ function renderUnifiedScheduleLocationTabs() {
 
 function renderUnifiedScheduleGrid() {
   if (!unifiedScheduleGrid) return;
+  removeTooltip();
   attachUnifiedScheduleResizeObserver(unifiedScheduleGrid);
   const prevDays = unifiedScheduleGrid.querySelector(".schedule-days");
   if (prevDays) scheduleScrollState.unified = prevDays.scrollLeft;
@@ -5893,7 +5900,7 @@ function renderUnifiedScheduleGrid() {
             return false;
           }
           unifiedScheduleState.activeSlotIds.add(slot.id);
-          slotEl.classList.add("active-slot");
+          renderUnifiedScheduleGrid();
         };
         slotEl.addEventListener("mousedown", confirmEditStart, true);
         slotEl.addEventListener("touchstart", confirmEditStart, { passive: false, capture: true });
@@ -5916,6 +5923,7 @@ function renderUnifiedScheduleGrid() {
 
         const deleteSlot = () => {
           if (!slot.can_edit) return;
+          removeTooltip();
           unifiedScheduleState.slots = unifiedScheduleState.slots.filter((item) => item.id !== slot.id);
           unifiedScheduleState.selectedIds.delete(slot.id);
           unifiedScheduleState.dirty = true;
@@ -6005,6 +6013,7 @@ function closeSchedulePage(pushHistory = true) {
   if (pushHistory && isSchedulePath()) {
     history.pushState({}, "", "/");
   }
+  removeTooltip();
   setSchedulePageMode(false);
 }
 
@@ -6385,9 +6394,6 @@ majorInput?.addEventListener("focus", (event) => {
   renderMajorSuggestions(event.target.value);
 });
 
-const adminQuotaLabel = adminQuota?.closest("label");
-bindQuotaUsageTooltip([adminQuotaLabel, adminQuota], () => buildQuotaUsageTooltipText(adminQuota?.value || "", [], 0));
-
 majorInput?.addEventListener("keydown", (event) => {
   if (event.key === "Enter" || event.key === ",") {
     event.preventDefault();
@@ -6711,6 +6717,7 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Delete") {
     if (hasUnifiedSelection) {
       event.preventDefault();
+      removeTooltip();
       unifiedScheduleState.slots = unifiedScheduleState.slots.filter((slot) => {
         if (!unifiedScheduleState.selectedIds.has(slot.id)) return true;
         return !slot.can_edit;
