@@ -2230,16 +2230,17 @@ function getTouchById(event, touchId) {
   return null;
 }
 
-function findSlotDayBody(slotEl, slotDate) {
-  const timeline = document.querySelector(`.schedule-timeline[data-date="${slotDate}"]`);
+function findSlotDayBody(slotEl, slotDate, gridRoot = null) {
+  const timeline = (gridRoot || document).querySelector?.(`.schedule-timeline[data-date="${slotDate}"]`) || null;
   if (timeline) return timeline.closest(".schedule-day-body");
   const direct = slotEl?.closest?.(".schedule-day-body");
   if (direct) return direct;
   return null;
 }
 
-function resolveTimelineDateFromPoint(slotEl, clientX) {
-  const grid = slotEl?.closest?.(".schedule-grid")
+function resolveTimelineDateFromPoint(slotEl, clientX, gridRoot = null) {
+  const grid = gridRoot
+    || slotEl?.closest?.(".schedule-grid")
     || document.querySelector("#adminEditScheduleGrid.schedule-grid")
     || document.querySelector("#scheduleGrid.schedule-grid")
     || document.querySelector("#unifiedScheduleGrid.schedule-grid");
@@ -2280,10 +2281,14 @@ function updateSlotElementPreview(slotEl, slot) {
 function startTouchDrag(slotEl, slot, stateRef, renderFn) {
   let activeTouchId = null;
   let anchorOffsetMin = 0;
+  const dragGrid = slotEl?.closest?.(".schedule-grid")
+    || document.querySelector("#adminEditScheduleGrid.schedule-grid")
+    || document.querySelector("#scheduleGrid.schedule-grid")
+    || document.querySelector("#unifiedScheduleGrid.schedule-grid");
   showSlotNudgeControls({ slot, stateRef, renderFn, mode: "move", edge: null });
 
   const getTouchMinute = (touch) => {
-    const body = findSlotDayBody(slotEl, slot.date);
+    const body = findSlotDayBody(slotEl, slot.date, dragGrid);
     if (!body || !touch) return null;
     const bodyTop = body.getBoundingClientRect().top;
     const viewOffset = getViewOffsetPx(stateRef);
@@ -2309,7 +2314,7 @@ function startTouchDrag(slotEl, slot, stateRef, renderFn) {
     if (!touch) return;
     const touchMin = getTouchMinute(touch);
     if (touchMin === null) return;
-    const targetDate = resolveTimelineDateFromPoint(slotEl, touch.clientX) || slot.date;
+    const targetDate = resolveTimelineDateFromPoint(slotEl, touch.clientX, dragGrid) || slot.date;
     if (targetDate && !isDateBeforeToday(new Date(`${targetDate}T00:00:00`))) {
       slot.date = targetDate;
     }
@@ -2503,6 +2508,10 @@ function enableSlotDrag(slotEl, slot, stateRef, renderFn) {
   if (isDateBeforeToday(new Date(`${slot.date}T00:00:00`))) return;
   if (slot.locked) return;
   if (IS_COARSE_POINTER) return;
+  const dragGrid = slotEl?.closest?.(".schedule-grid")
+    || document.querySelector("#adminEditScheduleGrid.schedule-grid")
+    || document.querySelector("#scheduleGrid.schedule-grid")
+    || document.querySelector("#unifiedScheduleGrid.schedule-grid");
   let startX = 0;
   let startY = 0;
   let startMin = slot.startMin;
@@ -2518,7 +2527,7 @@ function enableSlotDrag(slotEl, slot, stateRef, renderFn) {
     }
     const delta = event.clientY - startY;
     const step = Math.round(delta / (PX_PER_MIN * 10)) * 10;
-    const targetDate = resolveTimelineDateFromPoint(slotEl, event.clientX) || slot.date;
+    const targetDate = resolveTimelineDateFromPoint(slotEl, event.clientX, dragGrid) || slot.date;
     if (targetDate && !isDateBeforeToday(new Date(`${targetDate}T00:00:00`))) {
       slot.date = targetDate;
     }
@@ -3263,6 +3272,10 @@ function toggleAdminSlotSelection(id) {
 function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
   if (isDateBeforeToday(new Date(`${slot.date}T00:00:00`))) return;
   if (IS_COARSE_POINTER) return;
+  const dragGrid = slotEl?.closest?.(".schedule-grid")
+    || document.querySelector("#adminEditScheduleGrid.schedule-grid")
+    || document.querySelector("#scheduleGrid.schedule-grid")
+    || document.querySelector("#unifiedScheduleGrid.schedule-grid");
   let startX = 0;
   let startY = 0;
   let startMin = slot.startMin;
@@ -3278,7 +3291,7 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
     }
     const delta = event.clientY - startY;
     const step = Math.round(delta / (PX_PER_MIN * 10)) * 10;
-    const targetDate = resolveTimelineDateFromPoint(slotEl, event.clientX) || slot.date;
+    const targetDate = resolveTimelineDateFromPoint(slotEl, event.clientX, dragGrid) || slot.date;
     if (targetDate && !isDateBeforeToday(new Date(`${targetDate}T00:00:00`))) {
       slot.date = targetDate;
     }
