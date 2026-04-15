@@ -1039,10 +1039,10 @@ body.is-admin .split {
 
 .admin-participant-item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 42%);
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 44%);
   align-items: start;
-  gap: 1rem;
-  padding: 0.4rem 0.6rem;
+  gap: 0.75rem;
+  padding: 0.3rem 0.5rem;
   background: #ffffff;
   border-radius: 10px;
 }
@@ -1112,16 +1112,19 @@ body.is-admin .split {
 
 .admin-participant-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(92px, 1fr));
+  grid-template-columns: repeat(3, minmax(72px, 1fr));
   justify-content: end;
-  gap: 0.35rem;
+  gap: 0.18rem 0.22rem;
+  align-content: start;
 }
 
 .admin-participant-actions .ghost {
-  padding: 0.45rem 0.62rem;
-  border-radius: 10px;
+  padding: 0.12rem 0.34rem;
+  border-radius: 8px;
   min-height: 0;
-  line-height: 1.2;
+  line-height: 1.05;
+  font-size: 0.78rem;
+  font-weight: 600;
   width: 100%;
 }
 
