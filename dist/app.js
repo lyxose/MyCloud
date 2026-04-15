@@ -3360,10 +3360,12 @@ function toggleAdminSlotSelection(id) {
 function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn, options = null) {
   if (isDateBeforeToday(new Date(`${slot.date}T00:00:00`))) return;
   if (IS_COARSE_POINTER) return;
-  const dragGrid = slotEl?.closest?.(".schedule-grid")
+  const resolveDragGrid = () => options?.gridRoot
+    || slotEl?.closest?.(".schedule-grid")
     || document.querySelector("#adminEditScheduleGrid.schedule-grid")
     || document.querySelector("#scheduleGrid.schedule-grid")
     || document.querySelector("#unifiedScheduleGrid.schedule-grid");
+  let activeDragGrid = null;
   let startX = 0;
   let startY = 0;
   let startMin = slot.startMin;
@@ -3384,6 +3386,7 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn, options = null) {
     }
     const delta = event.clientY - startY;
     const step = Math.round(delta / (PX_PER_MIN * 10)) * 10;
+    const dragGrid = activeDragGrid || resolveDragGrid();
     let resolveMeta = null;
     const targetDate = resolveTimelineDateFromPoint(
       slotEl,
@@ -3436,6 +3439,7 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn, options = null) {
       }
       renderFn();
     }
+    activeDragGrid = null;
     dragging = false;
   };
 
@@ -3446,6 +3450,7 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn, options = null) {
     startY = event.clientY;
     startMin = slot.startMin;
     endMin = slot.endMin;
+    activeDragGrid = resolveDragGrid();
     moveTick = 0;
     lastDate = slot.date;
     if (debugEnabled()) {
@@ -3456,8 +3461,8 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn, options = null) {
         endMin,
         x: Math.round(startX),
         y: Math.round(startY),
-        dragGridId: dragGrid?.id || "",
-        timelines: dragGrid?.querySelectorAll?.(".schedule-timeline[data-date]")?.length || 0,
+        dragGridId: activeDragGrid?.id || "",
+        timelines: activeDragGrid?.querySelectorAll?.(".schedule-timeline[data-date]")?.length || 0,
       });
     }
     showSlotNudgeControls({ slot, stateRef, renderFn, mode: "move", edge: null });
@@ -6146,6 +6151,7 @@ function renderUnifiedScheduleGrid() {
             unifiedScheduleState.dirty = true;
             renderUnifiedScheduleGrid();
           }, {
+            gridRoot: container,
             debugTag: "unified",
             debugEnabled: () => unifiedDragDebugState.enabled,
             debugLog: (message, payload) => writeUnifiedDragDebug(message, payload),

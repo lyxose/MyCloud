@@ -1119,10 +1119,10 @@ body.is-admin .split {
 }
 
 .admin-participant-actions .ghost {
-  padding: 0.12rem 0.34rem;
+  padding: 0.2rem 0.36rem;
   border-radius: 8px;
-  min-height: 0;
-  line-height: 1.05;
+  min-height: 1.72rem;
+  line-height: 1.2;
   font-size: 0.78rem;
   font-weight: 600;
   width: 100%;
