@@ -572,6 +572,8 @@ const unifiedScheduleUp = document.getElementById("unifiedScheduleUp");
 const unifiedScheduleDown = document.getElementById("unifiedScheduleDown");
 const unifiedScheduleRefresh = document.getElementById("unifiedScheduleRefresh");
 const unifiedScheduleSave = document.getElementById("unifiedScheduleSave");
+const unifiedDragDebugToggle = document.getElementById("unifiedDragDebugToggle");
+const unifiedDragDebugPanel = document.getElementById("unifiedDragDebugPanel");
 
 const VIEW_START_DEFAULT = 9 * 60;
 const VIEW_END_DEFAULT = 18 * 60;
@@ -601,6 +603,53 @@ function setButtonLoadingState(button, loading, loadingText = "处理中...") {
   button.disabled = !!loading;
   button.classList.toggle("loading", !!loading);
   button.textContent = loading ? loadingText : button.dataset.originalText;
+}
+
+const unifiedDragDebugState = {
+  enabled: false,
+  lines: [],
+  maxLines: 120,
+};
+
+function formatUnifiedDragDebugMessage(message, payload = null) {
+  const time = new Date();
+  const ts = `${String(time.getHours()).padStart(2, "0")}:${String(time.getMinutes()).padStart(2, "0")}:${String(time.getSeconds()).padStart(2, "0")}.${String(time.getMilliseconds()).padStart(3, "0")}`;
+  const payloadText = payload ? ` ${JSON.stringify(payload)}` : "";
+  return `[${ts}] ${message}${payloadText}`;
+}
+
+function writeUnifiedDragDebug(message, payload = null) {
+  if (!unifiedDragDebugState.enabled) return;
+  const line = formatUnifiedDragDebugMessage(message, payload);
+  unifiedDragDebugState.lines.push(line);
+  if (unifiedDragDebugState.lines.length > unifiedDragDebugState.maxLines) {
+    unifiedDragDebugState.lines.splice(0, unifiedDragDebugState.lines.length - unifiedDragDebugState.maxLines);
+  }
+  if (unifiedDragDebugPanel) {
+    unifiedDragDebugPanel.classList.remove("hidden");
+    unifiedDragDebugPanel.textContent = unifiedDragDebugState.lines.join("\n");
+    unifiedDragDebugPanel.scrollTop = unifiedDragDebugPanel.scrollHeight;
+  }
+  console.log("[UnifiedDragDebug]", message, payload || "");
+}
+
+function setUnifiedDragDebugEnabled(enabled) {
+  unifiedDragDebugState.enabled = !!enabled;
+  if (!enabled) {
+    unifiedDragDebugState.lines = [];
+    if (unifiedDragDebugPanel) {
+      unifiedDragDebugPanel.textContent = "";
+      unifiedDragDebugPanel.classList.add("hidden");
+    }
+  } else {
+    writeUnifiedDragDebug("Unified drag debug enabled", {
+      location: String(unifiedScheduleState?.currentLocation || ""),
+      dayCount: Number(unifiedScheduleState?.dayCount || 0),
+    });
+  }
+  if (unifiedDragDebugToggle) {
+    unifiedDragDebugToggle.textContent = `拖动调试：${enabled ? "开" : "关"}`;
+  }
 }
 
 function setAdminTabsLoading(text = "正在加载实验列表...") {
@@ -2244,7 +2293,7 @@ function findSlotDayBody(slotEl, slotDate, gridRoot = null) {
   return null;
 }
 
-function resolveTimelineDateFromPoint(slotEl, clientX, gridRoot = null) {
+function resolveTimelineDateFromPoint(slotEl, clientX, gridRoot = null, debugHook = null) {
   const grid = gridRoot
     || slotEl?.closest?.(".schedule-grid")
     || document.querySelector("#adminEditScheduleGrid.schedule-grid")
@@ -2271,7 +2320,18 @@ function resolveTimelineDateFromPoint(slotEl, clientX, gridRoot = null) {
       nearest = date;
     }
   });
-  return picked || nearest;
+  const resolved = picked || nearest;
+  if (typeof debugHook === "function") {
+    debugHook({
+      gridId: grid.id || "",
+      timelineCount: timelines.length,
+      picked,
+      nearest,
+      resolved,
+      clientX: Number(clientX),
+    });
+  }
+  return resolved;
 }
 
 function updateSlotElementPreview(slotEl, slot) {
@@ -3275,7 +3335,7 @@ function toggleAdminSlotSelection(id) {
   }
 }
 
-function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
+function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn, options = null) {
   if (isDateBeforeToday(new Date(`${slot.date}T00:00:00`))) return;
   if (IS_COARSE_POINTER) return;
   const dragGrid = slotEl?.closest?.(".schedule-grid")
@@ -3287,6 +3347,11 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
   let startMin = slot.startMin;
   let endMin = slot.endMin;
   let dragging = false;
+  let moveTick = 0;
+  let lastDate = slot.date;
+  const debugEnabled = typeof options?.debugEnabled === "function" ? options.debugEnabled : () => false;
+  const debugLog = typeof options?.debugLog === "function" ? options.debugLog : () => {};
+  const debugTag = String(options?.debugTag || "admin-schedule");
 
   const onMove = (event) => {
     const dx = event.clientX - startX;
@@ -3297,7 +3362,13 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
     }
     const delta = event.clientY - startY;
     const step = Math.round(delta / (PX_PER_MIN * 10)) * 10;
-    const targetDate = resolveTimelineDateFromPoint(slotEl, event.clientX, dragGrid) || slot.date;
+    let resolveMeta = null;
+    const targetDate = resolveTimelineDateFromPoint(
+      slotEl,
+      event.clientX,
+      dragGrid,
+      debugEnabled() ? (meta) => { resolveMeta = meta; } : null
+    ) || slot.date;
     if (targetDate && !isDateBeforeToday(new Date(`${targetDate}T00:00:00`))) {
       slot.date = targetDate;
     }
@@ -3309,6 +3380,22 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
     }
     slot.startMin = nextStart;
     slot.endMin = nextStart + duration;
+    if (debugEnabled()) {
+      moveTick += 1;
+      const changedDay = slot.date !== lastDate;
+      if (changedDay || moveTick % 5 === 1) {
+        debugLog(`${debugTag}:mousemove`, {
+          x: Math.round(event.clientX),
+          y: Math.round(event.clientY),
+          date: slot.date,
+          startMin: slot.startMin,
+          endMin: slot.endMin,
+          dragGridId: dragGrid?.id || "",
+          resolveMeta,
+        });
+      }
+      lastDate = slot.date;
+    }
     renderFn();
   };
 
@@ -3317,6 +3404,13 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
     document.removeEventListener("mouseup", onUp);
     if (dragging) {
       mergeOverlappingSlots(stateRef);
+      if (debugEnabled()) {
+        debugLog(`${debugTag}:mouseup`, {
+          finalDate: slot.date,
+          finalStartMin: slot.startMin,
+          finalEndMin: slot.endMin,
+        });
+      }
       renderFn();
     }
     dragging = false;
@@ -3329,6 +3423,20 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn) {
     startY = event.clientY;
     startMin = slot.startMin;
     endMin = slot.endMin;
+    moveTick = 0;
+    lastDate = slot.date;
+    if (debugEnabled()) {
+      debugLog(`${debugTag}:mousedown`, {
+        slotId: String(slot.id || ""),
+        slotDate: slot.date,
+        startMin,
+        endMin,
+        x: Math.round(startX),
+        y: Math.round(startY),
+        dragGridId: dragGrid?.id || "",
+        timelines: dragGrid?.querySelectorAll?.(".schedule-timeline[data-date]")?.length || 0,
+      });
+    }
     showSlotNudgeControls({ slot, stateRef, renderFn, mode: "move", edge: null });
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
@@ -5037,9 +5145,13 @@ function renderAdminExperimentList(experiments) {
         <div class="admin-participant-list hidden"></div>
         <div class="admin-batch-toolbar hidden">
           <span class="admin-batch-count">已选中 0 条（0 名被试）</span>
-          <button type="button" class="ghost" data-action="batch-download-users" disabled>下载数据</button>
-          <button type="button" class="ghost" data-action="batch-reject" disabled>拒绝被试</button>
-          <button type="button" class="ghost" data-action="batch-download-participants" disabled>下载被试表</button>
+          <div class="admin-batch-actions">
+            <button type="button" class="ghost" data-action="batch-select-all" disabled>全选</button>
+            <button type="button" class="ghost" data-action="batch-download-users" disabled>下载数据</button>
+            <button type="button" class="ghost" data-action="batch-reject" disabled>拒绝被试</button>
+            <button type="button" class="ghost" data-action="batch-restore" disabled>恢复被试</button>
+            <button type="button" class="ghost" data-action="batch-download-participants" disabled>下载被试表</button>
+          </div>
         </div>
       </div>
     `;
@@ -5049,8 +5161,10 @@ function renderAdminExperimentList(experiments) {
     const toggleBtn = card.querySelector("[data-action='toggle']");
     const batchToolbar = card.querySelector(".admin-batch-toolbar");
     const batchCount = card.querySelector(".admin-batch-count");
+    const batchSelectAllBtn = card.querySelector("[data-action='batch-select-all']");
     const batchDownloadUsersBtn = card.querySelector("[data-action='batch-download-users']");
     const batchRejectBtn = card.querySelector("[data-action='batch-reject']");
+    const batchRestoreBtn = card.querySelector("[data-action='batch-restore']");
     const batchDownloadParticipantsBtn = card.querySelector("[data-action='batch-download-participants']");
     const list = card.querySelector(".admin-participant-list");
 
@@ -5060,13 +5174,22 @@ function renderAdminExperimentList(experiments) {
     const updateBatchToolbar = () => {
       const selectedRows = getSelectedRows();
       const selectedUsers = getSelectedUserUids();
+      const rejectedRows = selectedRows.filter((row) => !!row.isRejected);
       batchToolbar?.classList.toggle("hidden", !(cardState.batchMode && cardState.expanded));
       list?.classList.toggle("batch-mode", !!cardState.batchMode);
+      card.classList.toggle("batch-active", !!(cardState.batchMode && cardState.expanded));
       if (batchCount) {
         batchCount.textContent = `已选中 ${selectedRows.length} 条（${selectedUsers.length} 名被试）`;
       }
+      if (batchSelectAllBtn) {
+        const totalRows = cardState.rows.length;
+        const selectedAll = totalRows > 0 && selectedRows.length === totalRows;
+        batchSelectAllBtn.textContent = selectedAll ? "取消全选" : "全选";
+        batchSelectAllBtn.disabled = totalRows === 0;
+      }
       if (batchDownloadUsersBtn) batchDownloadUsersBtn.disabled = selectedUsers.length === 0;
       if (batchRejectBtn) batchRejectBtn.disabled = selectedRows.length === 0;
+      if (batchRestoreBtn) batchRestoreBtn.disabled = rejectedRows.length === 0;
       if (batchDownloadParticipantsBtn) batchDownloadParticipantsBtn.disabled = selectedUsers.length === 0;
       if (toggleBatchBtn) {
         toggleBatchBtn.textContent = cardState.batchMode ? "退出批量" : "批量操作";
@@ -5081,6 +5204,10 @@ function renderAdminExperimentList(experiments) {
         onSelectionChange: updateBatchToolbar,
         onRowsRendered: (rows) => {
           cardState.rows = Array.isArray(rows) ? rows : [];
+          const validKeys = new Set(cardState.rows.map((row) => row.rowKey));
+          Array.from(cardState.selectedRowKeys).forEach((key) => {
+            if (!validKeys.has(key)) cardState.selectedRowKeys.delete(key);
+          });
           updateBatchToolbar();
         },
       });
@@ -5114,6 +5241,21 @@ function renderAdminExperimentList(experiments) {
       cardState.batchMode = !cardState.batchMode;
       if (!cardState.batchMode) {
         cardState.selectedRowKeys.clear();
+      }
+      updateBatchToolbar();
+      if (cardState.expanded) {
+        await renderList(false);
+      }
+    });
+
+    batchSelectAllBtn?.addEventListener("click", async () => {
+      if (!cardState.rows.length) return;
+      const allSelected = cardState.rows.length > 0 && cardState.selectedRowKeys.size === cardState.rows.length;
+      if (allSelected) {
+        cardState.selectedRowKeys.clear();
+      } else {
+        cardState.selectedRowKeys.clear();
+        cardState.rows.forEach((row) => cardState.selectedRowKeys.add(row.rowKey));
       }
       updateBatchToolbar();
       if (cardState.expanded) {
@@ -5178,6 +5320,32 @@ function renderAdminExperimentList(experiments) {
         alert(error.message || "批量拒绝失败");
       } finally {
         setButtonLoadingState(batchRejectBtn, false);
+      }
+    });
+
+    batchRestoreBtn?.addEventListener("click", async () => {
+      const rejectedRows = getSelectedRows().filter((row) => !!row.isRejected);
+      if (!rejectedRows.length) return;
+      const ok = window.confirm(`确认恢复所选 ${rejectedRows.length} 条已拒绝记录？`);
+      if (!ok) return;
+      try {
+        setButtonLoadingState(batchRestoreBtn, true, "处理中...");
+        for (const row of rejectedRows) {
+          await apiRequest("/admin/experiment/participant/restore", {
+            method: "POST",
+            json: {
+              experiment_uid: exp.experiment_uid,
+              user_uid: row.user_uid,
+              slot_id: row.slot_id,
+            },
+          });
+        }
+        cardState.selectedRowKeys.clear();
+        await renderList(true);
+      } catch (error) {
+        alert(error.message || "批量恢复失败");
+      } finally {
+        setButtonLoadingState(batchRestoreBtn, false);
       }
     });
 
@@ -5533,6 +5701,7 @@ async function loadParticipantsForExperiment(experimentUid, list, options = {}) 
         rowKey,
         user_uid: String(participant.user_uid || ""),
         slot_id: participant.slot?.id,
+        isRejected,
       });
     });
     onRowsRendered?.(rowMeta);
@@ -5953,6 +6122,10 @@ function renderUnifiedScheduleGrid() {
           enableAdminSlotDrag(slotEl, slot, unifiedScheduleState, () => {
             unifiedScheduleState.dirty = true;
             renderUnifiedScheduleGrid();
+          }, {
+            debugTag: "unified",
+            debugEnabled: () => unifiedDragDebugState.enabled,
+            debugLog: (message, payload) => writeUnifiedDragDebug(message, payload),
           });
           enableSlotResize(slotEl, slot, () => {
             unifiedScheduleState.dirty = true;
@@ -6480,6 +6653,10 @@ unifiedScheduleRefresh?.addEventListener("click", async () => {
 
 unifiedScheduleSave?.addEventListener("click", async () => {
   await saveUnifiedScheduleChanges();
+});
+
+unifiedDragDebugToggle?.addEventListener("click", () => {
+  setUnifiedDragDebugEnabled(!unifiedDragDebugState.enabled);
 });
 
 unifiedScheduleTitle?.addEventListener("click", () => {
