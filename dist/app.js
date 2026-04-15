@@ -5159,35 +5159,26 @@ function renderAdminExperimentList(experiments) {
         <div class="admin-experiment-actions">
           ${showDatasetDownload ? '<button type="button" class="ghost" data-action="download-all">下载完整数据集</button>' : ''}
           <button type="button" class="ghost" data-action="download-participants">下载被试表</button>
+          ${showDatasetDownload ? '<button type="button" class="ghost hidden" data-action="batch-download-users">下载选中数据集</button>' : ''}
+          <button type="button" class="ghost hidden" data-action="batch-download-participants">下载选中被试表</button>
+          <button type="button" class="ghost hidden" data-action="batch-reject">批量拒绝被试</button>
+          <button type="button" class="ghost hidden" data-action="batch-restore">批量恢复被试</button>
           <button type="button" class="ghost" data-action="toggle-batch">批量操作</button>
           <button type="button" class="ghost" data-action="toggle">展开参与名单</button>
         </div>
       </div>
       <div class="admin-experiment-body">
         <div class="admin-participant-list hidden"></div>
-        <div class="admin-batch-toolbar hidden">
-          <span class="admin-batch-count">已选中 0 条（0 名被试）</span>
-          <div class="admin-batch-actions">
-            <button type="button" class="ghost" data-action="batch-select-all" disabled>全选</button>
-            <button type="button" class="ghost" data-action="batch-download-users" disabled>下载数据</button>
-            <button type="button" class="ghost" data-action="batch-reject" disabled>拒绝被试</button>
-            <button type="button" class="ghost" data-action="batch-restore" disabled>恢复被试</button>
-            <button type="button" class="ghost" data-action="batch-download-participants" disabled>下载被试表</button>
-          </div>
-        </div>
       </div>
     `;
     const downloadAllBtn = card.querySelector("[data-action='download-all']");
     const downloadParticipantsBtn = card.querySelector("[data-action='download-participants']");
-    const toggleBatchBtn = card.querySelector("[data-action='toggle-batch']");
-    const toggleBtn = card.querySelector("[data-action='toggle']");
-    const batchToolbar = card.querySelector(".admin-batch-toolbar");
-    const batchCount = card.querySelector(".admin-batch-count");
-    const batchSelectAllBtn = card.querySelector("[data-action='batch-select-all']");
     const batchDownloadUsersBtn = card.querySelector("[data-action='batch-download-users']");
+    const batchDownloadParticipantsBtn = card.querySelector("[data-action='batch-download-participants']");
     const batchRejectBtn = card.querySelector("[data-action='batch-reject']");
     const batchRestoreBtn = card.querySelector("[data-action='batch-restore']");
-    const batchDownloadParticipantsBtn = card.querySelector("[data-action='batch-download-participants']");
+    const toggleBatchBtn = card.querySelector("[data-action='toggle-batch']");
+    const toggleBtn = card.querySelector("[data-action='toggle']");
     const list = card.querySelector(".admin-participant-list");
 
     const getSelectedRows = () => cardState.rows.filter((row) => cardState.selectedRowKeys.has(row.rowKey));
@@ -5197,22 +5188,31 @@ function renderAdminExperimentList(experiments) {
       const selectedRows = getSelectedRows();
       const selectedUsers = getSelectedUserUids();
       const rejectedRows = selectedRows.filter((row) => !!row.isRejected);
-      batchToolbar?.classList.toggle("hidden", !(cardState.batchMode && cardState.expanded));
       list?.classList.toggle("batch-mode", !!cardState.batchMode);
       card.classList.toggle("batch-active", !!(cardState.batchMode && cardState.expanded));
-      if (batchCount) {
-        batchCount.textContent = `已选中 ${selectedRows.length} 条（${selectedUsers.length} 名被试）`;
+      const batchActive = !!(cardState.batchMode && cardState.expanded);
+      if (downloadAllBtn) {
+        downloadAllBtn.classList.toggle("hidden", batchActive);
       }
-      if (batchSelectAllBtn) {
-        const totalRows = cardState.rows.length;
-        const selectedAll = totalRows > 0 && selectedRows.length === totalRows;
-        batchSelectAllBtn.textContent = selectedAll ? "取消全选" : "全选";
-        batchSelectAllBtn.disabled = totalRows === 0;
+      if (downloadParticipantsBtn) {
+        downloadParticipantsBtn.classList.toggle("hidden", batchActive);
       }
-      if (batchDownloadUsersBtn) batchDownloadUsersBtn.disabled = selectedUsers.length === 0;
-      if (batchRejectBtn) batchRejectBtn.disabled = selectedRows.length === 0;
-      if (batchRestoreBtn) batchRestoreBtn.disabled = rejectedRows.length === 0;
-      if (batchDownloadParticipantsBtn) batchDownloadParticipantsBtn.disabled = selectedUsers.length === 0;
+      if (batchDownloadUsersBtn) {
+        batchDownloadUsersBtn.classList.toggle("hidden", !batchActive || !showDatasetDownload);
+        batchDownloadUsersBtn.disabled = selectedUsers.length === 0;
+      }
+      if (batchDownloadParticipantsBtn) {
+        batchDownloadParticipantsBtn.classList.toggle("hidden", !batchActive);
+        batchDownloadParticipantsBtn.disabled = selectedUsers.length === 0;
+      }
+      if (batchRejectBtn) {
+        batchRejectBtn.classList.toggle("hidden", !batchActive);
+        batchRejectBtn.disabled = selectedRows.length === 0;
+      }
+      if (batchRestoreBtn) {
+        batchRestoreBtn.classList.toggle("hidden", !batchActive);
+        batchRestoreBtn.disabled = rejectedRows.length === 0;
+      }
       if (toggleBatchBtn) {
         toggleBatchBtn.textContent = cardState.batchMode ? "退出批量" : "批量操作";
       }
@@ -5270,21 +5270,6 @@ function renderAdminExperimentList(experiments) {
       }
     });
 
-    batchSelectAllBtn?.addEventListener("click", async () => {
-      if (!cardState.rows.length) return;
-      const allSelected = cardState.rows.length > 0 && cardState.selectedRowKeys.size === cardState.rows.length;
-      if (allSelected) {
-        cardState.selectedRowKeys.clear();
-      } else {
-        cardState.selectedRowKeys.clear();
-        cardState.rows.forEach((row) => cardState.selectedRowKeys.add(row.rowKey));
-      }
-      updateBatchToolbar();
-      if (cardState.expanded) {
-        await renderList(false);
-      }
-    });
-
     toggleBtn.addEventListener("click", async () => {
       cardState.expanded = !cardState.expanded;
       list.classList.toggle("hidden", !cardState.expanded);
@@ -5302,14 +5287,19 @@ function renderAdminExperimentList(experiments) {
     });
 
     batchDownloadUsersBtn?.addEventListener("click", async () => {
+      if (!cardState.batchMode) return;
       const selectedUsers = getSelectedUserUids();
       if (!selectedUsers.length) return;
       try {
-        setButtonLoadingState(batchDownloadUsersBtn, true, "下载中...");
-        await downloadApiFile(
-          `/admin/experiment/data/download-users?experiment_uid=${encodeURIComponent(exp.experiment_uid)}&user_uids=${encodeURIComponent(selectedUsers.join(","))}`,
-          `${exp.experiment_uid}_selected_${selectedUsers.length}_dataset.tar`
-        );
+        setButtonLoadingState(batchDownloadUsersBtn, true, showDatasetDownload ? "下载中..." : "导出中...");
+        if (showDatasetDownload) {
+          await downloadApiFile(
+            `/admin/experiment/data/download-users?experiment_uid=${encodeURIComponent(exp.experiment_uid)}&user_uids=${encodeURIComponent(selectedUsers.join(","))}`,
+            `${exp.experiment_uid}_selected_${selectedUsers.length}_dataset.tar`
+          );
+        } else {
+          await downloadParticipantsCsv(exp.experiment_uid, selectedUsers);
+        }
       } catch (error) {
         alert(error.message || "批量下载失败");
       } finally {
@@ -5318,6 +5308,7 @@ function renderAdminExperimentList(experiments) {
     });
 
     batchRejectBtn?.addEventListener("click", async () => {
+      if (!cardState.batchMode) return;
       const selectedRows = getSelectedRows();
       if (!selectedRows.length) return;
       const reason = prompt("可选：输入本次批量拒绝原因（将应用到所选记录）", "") ?? "";
@@ -5346,6 +5337,7 @@ function renderAdminExperimentList(experiments) {
     });
 
     batchRestoreBtn?.addEventListener("click", async () => {
+      if (!cardState.batchMode) return;
       const rejectedRows = getSelectedRows().filter((row) => !!row.isRejected);
       if (!rejectedRows.length) return;
       const ok = window.confirm(`确认恢复所选 ${rejectedRows.length} 条已拒绝记录？`);
@@ -5372,6 +5364,7 @@ function renderAdminExperimentList(experiments) {
     });
 
     batchDownloadParticipantsBtn?.addEventListener("click", async () => {
+      if (!cardState.batchMode) return;
       const selectedUsers = getSelectedUserUids();
       if (!selectedUsers.length) return;
       try {
