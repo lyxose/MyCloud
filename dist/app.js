@@ -2293,12 +2293,17 @@ function findSlotDayBody(slotEl, slotDate, gridRoot = null) {
   return null;
 }
 
-function resolveTimelineDateFromPoint(slotEl, clientX, clientY = null, gridRoot = null, debugHook = null) {
-  const grid = gridRoot
-    || slotEl?.closest?.(".schedule-grid")
-    || document.querySelector("#adminEditScheduleGrid.schedule-grid")
+function resolveDragGrid(slotEl, preferredGrid = null) {
+  if (preferredGrid?.classList?.contains("schedule-grid")) return preferredGrid;
+  const connectedGrid = slotEl?.isConnected ? slotEl.closest?.(".schedule-grid") : null;
+  if (connectedGrid) return connectedGrid;
+  return document.querySelector("#adminEditScheduleGrid.schedule-grid")
     || document.querySelector("#scheduleGrid.schedule-grid")
     || document.querySelector("#unifiedScheduleGrid.schedule-grid");
+}
+
+function resolveTimelineDateFromPoint(slotEl, clientX, clientY = null, gridRoot = null, debugHook = null) {
+  const grid = resolveDragGrid(slotEl, gridRoot);
   if (!grid) return null;
   let pointHit = null;
   if (Number.isFinite(clientX) && Number.isFinite(clientY)) {
@@ -2369,13 +2374,10 @@ function updateSlotElementPreview(slotEl, slot) {
 function startTouchDrag(slotEl, slot, stateRef, renderFn) {
   let activeTouchId = null;
   let anchorOffsetMin = 0;
-  const dragGrid = slotEl?.closest?.(".schedule-grid")
-    || document.querySelector("#adminEditScheduleGrid.schedule-grid")
-    || document.querySelector("#scheduleGrid.schedule-grid")
-    || document.querySelector("#unifiedScheduleGrid.schedule-grid");
   showSlotNudgeControls({ slot, stateRef, renderFn, mode: "move", edge: null });
 
   const getTouchMinute = (touch) => {
+    const dragGrid = resolveDragGrid(slotEl);
     const body = findSlotDayBody(slotEl, slot.date, dragGrid);
     if (!body || !touch) return null;
     const bodyTop = body.getBoundingClientRect().top;
@@ -2402,6 +2404,7 @@ function startTouchDrag(slotEl, slot, stateRef, renderFn) {
     if (!touch) return;
     const touchMin = getTouchMinute(touch);
     if (touchMin === null) return;
+    const dragGrid = resolveDragGrid(slotEl);
     const targetDate = resolveTimelineDateFromPoint(slotEl, touch.clientX, touch.clientY, dragGrid) || slot.date;
     if (targetDate && !isDateBeforeToday(new Date(`${targetDate}T00:00:00`))) {
       slot.date = targetDate;
@@ -2596,10 +2599,6 @@ function enableSlotDrag(slotEl, slot, stateRef, renderFn) {
   if (isDateBeforeToday(new Date(`${slot.date}T00:00:00`))) return;
   if (slot.locked) return;
   if (IS_COARSE_POINTER) return;
-  const dragGrid = slotEl?.closest?.(".schedule-grid")
-    || document.querySelector("#adminEditScheduleGrid.schedule-grid")
-    || document.querySelector("#scheduleGrid.schedule-grid")
-    || document.querySelector("#unifiedScheduleGrid.schedule-grid");
   let startX = 0;
   let startY = 0;
   let startMin = slot.startMin;
@@ -2615,6 +2614,7 @@ function enableSlotDrag(slotEl, slot, stateRef, renderFn) {
     }
     const delta = event.clientY - startY;
     const step = Math.round(delta / (PX_PER_MIN * 10)) * 10;
+    const dragGrid = resolveDragGrid(slotEl);
     const targetDate = resolveTimelineDateFromPoint(slotEl, event.clientX, event.clientY, dragGrid) || slot.date;
     if (targetDate && !isDateBeforeToday(new Date(`${targetDate}T00:00:00`))) {
       slot.date = targetDate;
@@ -3360,12 +3360,7 @@ function toggleAdminSlotSelection(id) {
 function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn, options = null) {
   if (isDateBeforeToday(new Date(`${slot.date}T00:00:00`))) return;
   if (IS_COARSE_POINTER) return;
-  const resolveDragGrid = () => options?.gridRoot
-    || slotEl?.closest?.(".schedule-grid")
-    || document.querySelector("#adminEditScheduleGrid.schedule-grid")
-    || document.querySelector("#scheduleGrid.schedule-grid")
-    || document.querySelector("#unifiedScheduleGrid.schedule-grid");
-  let activeDragGrid = null;
+  const preferredGrid = options?.gridRoot || null;
   let startX = 0;
   let startY = 0;
   let startMin = slot.startMin;
@@ -3386,8 +3381,8 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn, options = null) {
     }
     const delta = event.clientY - startY;
     const step = Math.round(delta / (PX_PER_MIN * 10)) * 10;
-    const dragGrid = activeDragGrid || resolveDragGrid();
     let resolveMeta = null;
+    const dragGrid = resolveDragGrid(slotEl, preferredGrid);
     const targetDate = resolveTimelineDateFromPoint(
       slotEl,
       event.clientX,
@@ -3439,7 +3434,6 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn, options = null) {
       }
       renderFn();
     }
-    activeDragGrid = null;
     dragging = false;
   };
 
@@ -3450,9 +3444,9 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn, options = null) {
     startY = event.clientY;
     startMin = slot.startMin;
     endMin = slot.endMin;
-    activeDragGrid = resolveDragGrid();
     moveTick = 0;
     lastDate = slot.date;
+    const dragGrid = resolveDragGrid(slotEl, preferredGrid);
     if (debugEnabled()) {
       debugLog(`${debugTag}:mousedown`, {
         slotId: String(slot.id || ""),
@@ -3461,8 +3455,8 @@ function enableAdminSlotDrag(slotEl, slot, stateRef, renderFn, options = null) {
         endMin,
         x: Math.round(startX),
         y: Math.round(startY),
-        dragGridId: activeDragGrid?.id || "",
-        timelines: activeDragGrid?.querySelectorAll?.(".schedule-timeline[data-date]")?.length || 0,
+        dragGridId: dragGrid?.id || "",
+        timelines: dragGrid?.querySelectorAll?.(".schedule-timeline[data-date]")?.length || 0,
       });
     }
     showSlotNudgeControls({ slot, stateRef, renderFn, mode: "move", edge: null });
@@ -6151,10 +6145,10 @@ function renderUnifiedScheduleGrid() {
             unifiedScheduleState.dirty = true;
             renderUnifiedScheduleGrid();
           }, {
-            gridRoot: container,
             debugTag: "unified",
             debugEnabled: () => unifiedDragDebugState.enabled,
             debugLog: (message, payload) => writeUnifiedDragDebug(message, payload),
+            gridRoot: unifiedScheduleGrid,
           });
           enableSlotResize(slotEl, slot, () => {
             unifiedScheduleState.dirty = true;
