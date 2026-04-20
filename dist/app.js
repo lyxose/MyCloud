@@ -3905,8 +3905,10 @@ async function loadExperiments() {
     renderExperiments();
     renderAppliedExperiments();
   } catch (error) {
-    state.experiments = [];
+    console.error("加载实验列表失败", error);
+    setStatus(experimentStatus, `实验列表加载失败：${error.message || "请稍后重试"}`, true);
     renderExperiments();
+    renderAppliedExperiments();
   }
 }
 
@@ -3979,11 +3981,16 @@ function toggleScheduleSlotSelection(exp, slot, slots) {
   setStatus(experimentStatus, count > 0 ? `已选择 ${count} 个时间段` : "请选择预约时间段");
 }
 
+function shouldIgnoreMissingPromptField(item) {
+  const text = String(item || "").trim();
+  return /^参与过/.test(text) || /^参加过/.test(text);
+}
+
 function formatMissingProfilePrompt(eligibility) {
   const missing = Array.isArray(eligibility?.missing_fields)
     ? eligibility.missing_fields
       .map((item) => String(item || "").trim())
-      .filter((item) => item && item !== "参与过" && item !== "参加过")
+      .filter((item) => item && !shouldIgnoreMissingPromptField(item))
     : [];
   if (!missing.length) return "";
   return `请完善以下信息：${missing.join("、")}。完善并保存后刷新页面方可报名。`;
@@ -4032,12 +4039,15 @@ function renderExperiments() {
     const filteredMissingFields = Array.isArray(exp.eligibility?.missing_fields)
       ? exp.eligibility.missing_fields
         .map((item) => String(item || "").trim())
-        .filter((item) => item && item !== "参与过" && item !== "参加过")
+        .filter((item) => item && !shouldIgnoreMissingPromptField(item))
       : [];
+    if (missingProfileInfo && filteredMissingFields.length === 0) {
+      return;
+    }
     const isDisabledForMissing = missingProfileInfo && filteredMissingFields.length > 0;
     const isSelected = state.selectedExperimentUid === exp.experiment_uid;
     if (isSelected) card.classList.add("selected");
-    const eligibility = exp.eligibility?.ok || (missingProfileInfo && filteredMissingFields.length === 0)
+    const eligibility = exp.eligibility?.ok
       ? ""
       : exp.eligibility?.reason === "您所属分组已满员"
         ? "名额已满"
@@ -7010,7 +7020,6 @@ loginForm.addEventListener("submit", async (event) => {
     localStorage.setItem("subjinfo_token", data.token);
     setStatus(loginStatus, "登录成功");
     await loadProfile();
-    await loadExperiments();
     if (state.role === "admin" || state.role === "root") {
       await loadAdminExperiments();
       await loadAdminExperimentList();

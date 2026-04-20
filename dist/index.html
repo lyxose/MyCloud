@@ -49,11 +49,11 @@
             </label>
             <label>
               密码
-              <input name="password" type="password" minlength="6" required placeholder="注意留存、无法找回" />
+              <input name="password" type="password" minlength="6" required placeholder="注意留存、无法找回" autocomplete="new-password" />
             </label>
             <label>
               确认密码
-              <input name="password_confirm" type="password" minlength="6" required />
+              <input name="password_confirm" type="password" minlength="6" required autocomplete="new-password" />
             </label>
             <label>
               所在学校/单位全称
@@ -87,7 +87,7 @@
             </label>
             <label>
               密码
-              <input name="password" type="password" required />
+              <input name="password" type="password" required autocomplete="current-password" />
             </label>
             <button type="submit" class="primary">登录</button>
           </form>
@@ -149,11 +149,11 @@
             <form id="passwordForm" class="form-grid">
               <label>
                 新密码
-                <input name="new_password" type="password" minlength="6" required />
+                <input name="new_password" type="password" minlength="6" required autocomplete="new-password" />
               </label>
               <label>
                 确认新密码
-                <input name="new_password_confirm" type="password" minlength="6" required />
+                <input name="new_password_confirm" type="password" minlength="6" required autocomplete="new-password" />
               </label>
               <div id="rootPasswordSection" class="inline-two hidden">
                 <label>
@@ -162,7 +162,7 @@
                 </label>
                 <label>
                   Root密码确认
-                  <input name="root_password" type="password" />
+                  <input name="root_password" type="password" autocomplete="current-password" />
                 </label>
               </div>
               <button type="submit" class="primary">提交更新</button>
