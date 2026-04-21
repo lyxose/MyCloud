@@ -2825,7 +2825,40 @@ function shiftUnifiedSelectedSlots(minuteDelta) {
 
 function deleteAdminSelectedSlots() {
   if (adminScheduleState.selectedIds.size === 0) return;
-  adminScheduleState.slots = adminScheduleState.slots.filter((slot) => !adminScheduleState.selectedIds.has(slot.id));
+  const selected = adminScheduleState.slots.filter((slot) => adminScheduleState.selectedIds.has(slot.id));
+  const toDelete = [];
+  for (const slot of selected) {
+    if (slot.sourceType) continue;
+    const participants = Array.isArray(slot.participants) ? slot.participants : [];
+    let policy = "remove_participation";
+    if (participants.length > 0) {
+      const answer = String(
+        prompt(
+          "该时间块已有被试预约。\n是否同时删除此实验的参加记录？\n输入：是 / 否 / 取消",
+          "取消"
+        ) || ""
+      ).trim();
+      if (!answer) return;
+      if (/^(是|y|yes)$/i.test(answer)) {
+        policy = "remove_participation";
+      } else if (/^(否|n|no)$/i.test(answer)) {
+        policy = "keep_participation";
+      } else {
+        return;
+      }
+    }
+    toDelete.push({ slot, policy });
+  }
+  if (!toDelete.length) return;
+
+  toDelete.forEach(({ slot, policy }) => {
+    const originalId = Number(slot.originalId);
+    if (Number.isFinite(originalId) && Array.isArray(slot.participants) && slot.participants.length > 0) {
+      adminScheduleState.deletedSlotPolicies.set(originalId, policy);
+    }
+  });
+  const deleteIds = new Set(toDelete.map(({ slot }) => slot.id));
+  adminScheduleState.slots = adminScheduleState.slots.filter((slot) => !deleteIds.has(slot.id));
   adminScheduleState.selectedIds.clear();
   renderAdminEditScheduleGrid();
 }
@@ -2939,6 +2972,7 @@ const adminScheduleState = {
   slots: [],
   selectedIds: new Set(),
   activeSlotIds: new Set(),
+  deletedSlotPolicies: new Map(),
   activeDayIndex: 0,
   dayCount: 7,
   autoStart: true,
@@ -3192,7 +3226,25 @@ function renderAdminEditScheduleGrid() {
         }
 
         const deleteSlot = () => {
-          if (slot.locked) return;
+          if (slot.sourceType) return;
+          const participants = Array.isArray(slot.participants) ? slot.participants : [];
+          if (participants.length > 0) {
+            const answer = String(
+              prompt(
+                "该时间块已有被试预约。\n是否同时删除此实验的参加记录？\n输入：是 / 否 / 取消",
+                "取消"
+              ) || ""
+            ).trim();
+            if (!answer) return;
+            const normalized = /^(是|y|yes)$/i.test(answer)
+              ? "remove_participation"
+              : (/^(否|n|no)$/i.test(answer) ? "keep_participation" : "cancel");
+            if (normalized === "cancel") return;
+            const originalId = Number(slot.originalId);
+            if (Number.isFinite(originalId)) {
+              adminScheduleState.deletedSlotPolicies.set(originalId, normalized);
+            }
+          }
           adminScheduleState.slots = adminScheduleState.slots.filter((item) => item.id !== slot.id);
           adminScheduleState.selectedIds.delete(slot.id);
           renderAdminEditScheduleGrid();
@@ -3506,6 +3558,25 @@ function buildAdminSchedulePayload() {
         locked: participants.length > 0 ? 1 : 0,
       };
     });
+}
+
+function buildAdminDeletedSchedulePayload() {
+  const existingOriginalIds = new Set(
+    adminScheduleState.slots
+      .map((slot) => Number(slot.originalId))
+      .filter((id) => Number.isFinite(id))
+  );
+  const deleted = [];
+  adminScheduleState.deletedSlotPolicies.forEach((policy, originalId) => {
+    const numericId = Number(originalId);
+    if (!Number.isFinite(numericId)) return;
+    if (existingOriginalIds.has(numericId)) return;
+    deleted.push({
+      original_id: numericId,
+      clear_participation: policy !== "keep_participation",
+    });
+  });
+  return deleted;
 }
 
 function parseSlotParticipants(slot) {
@@ -4423,6 +4494,7 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
   adminScheduleState.activeDayIndex = 0;
   adminScheduleState.slots = [];
   adminScheduleState.selectedIds.clear();
+  adminScheduleState.deletedSlotPolicies.clear();
   const detailAccessConfig = safeJsonParse(experiment.access_control_config_json, null) || {};
   const detailSource = detailAccessConfig?.source || "";
   const detailIsHosted = detailSource === "hosted_upload";
@@ -4883,6 +4955,7 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
       .filter(Boolean);
     adminScheduleState.slots = [...currentSlots, ...crossSlots];
     adminScheduleState.selectedIds.clear();
+    adminScheduleState.deletedSlotPolicies.clear();
     if (adminScheduleState.slots.length > 0) {
       adminScheduleState.weekStart = normalizeStartDate(
         new Date(`${adminScheduleState.slots[0].date}T00:00:00`),
@@ -5067,10 +5140,12 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
         json: {
           experiment_uid: experiment.experiment_uid,
           schedule_slots: buildAdminSchedulePayload(),
+          schedule_deleted_slots: buildAdminDeletedSchedulePayload(),
         },
       });
       setStatus(adminExperimentStatus, "排期已保存。与已预约冲突的待预约时段将自动对被试隐藏。", false);
       adminScheduleState.activeSlotIds.clear();
+      adminScheduleState.deletedSlotPolicies.clear();
       await loadAdminExperimentDetail(experiment.experiment_uid);
     } catch (error) {
       setStatus(adminExperimentStatus, error.message, true);
