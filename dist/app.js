@@ -6372,7 +6372,7 @@ function renderExperimentSlots(exp, slots) {
       if (state.selectedExperimentUid === exp.experiment_uid && state.selectedSlotIds.has(String(slot.id))) {
         btn.classList.add("selected");
       }
-      btn.textContent = `${formatSlotDateTime(slot.start_time)} - ${formatSlotTime(slot.end_time)}`;
+      btn.textContent = `${formatSlotDateTime(slot.start_time)}`;  //  - ${formatSlotTime(slot.end_time)}
       btn.addEventListener("click", () => {
         toggleScheduleSlotSelection(exp, slot, slots);
       });
