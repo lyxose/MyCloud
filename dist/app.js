@@ -3740,23 +3740,75 @@ function parseQuotaConditionDisplay(conditionText, lastField = "") {
   return { field: lastField, label: `${lastField}${raw}` };
 }
 
+function generateQuotaItemIdFromText(conditionText, lastField) {
+  const cleaned = String(conditionText || "").replace(/\s+/g, "");
+  if (cleaned.toUpperCase() === "ALL") {
+    let hash = 5381;
+    const key = "_all_";
+    for (let i = 0; i < key.length; i += 1) {
+      hash = ((hash << 5) + hash) ^ key.charCodeAt(i);
+      hash = hash | 0;
+    }
+    return `Q${Math.abs(hash).toString(36)}`;
+  }
+  const fieldMatch = cleaned.match(/^(性别|年龄|所在地区|左\/右利手|左眼近视度数|右眼近视度数|民族|职业|专业|受教育年限|身高|体重|头围)/);
+  let field = lastField;
+  let remainder = cleaned;
+  if (fieldMatch) {
+    field = fieldMatch[0];
+    remainder = cleaned.slice(field.length);
+  }
+  if (!field) field = lastField;
+  let key;
+  if (remainder.startsWith("[") || remainder.startsWith("(")) {
+    const rangeMatch = remainder.match(/^([\[(])([^,]+),([^\)\]]+)([\])])$/);
+    if (!rangeMatch) key = `unk:${cleaned}`;
+    else key = `rng:${field}:${rangeMatch[2]}:${rangeMatch[3]}:${rangeMatch[1] === "[" ? "1" : "0"}:${rangeMatch[4] === "]" ? "1" : "0"}`;
+  } else {
+    const opMatch = remainder.match(/^(>=|<=|>|<|=)(.+)$/);
+    if (!opMatch) key = `unk:${cleaned}`;
+    else {
+      const num = Number(opMatch[2]);
+      if (Number.isNaN(num)) key = `str:${field}:${opMatch[2]}`;
+      else key = `num:${field}:${opMatch[1]}:${num}`;
+    }
+  }
+  let hash = 5381;
+  for (let i = 0; i < key.length; i += 1) {
+    hash = ((hash << 5) + hash) ^ key.charCodeAt(i);
+    hash = hash | 0;
+  }
+  return `Q${Math.abs(hash).toString(36)}`;
+}
+
 function parseQuotaRulesText(rawText) {
   const lines = String(rawText || "").split(/\n+/).map((line) => line.trim()).filter(Boolean);
   const parsedLines = [];
+  const errors = [];
   lines.forEach((line, lineIndex) => {
     let lastField = "";
     let lineTotal = 0;
     const items = [];
     line.split("&").map((part) => part.trim()).filter(Boolean).forEach((part, itemIndex) => {
       const splitIndex = part.lastIndexOf("*");
-      if (splitIndex <= 0) return;
+      if (splitIndex <= 0) {
+        errors.push(`第${lineIndex + 1}行：项"${part}"缺少*分隔符（格式：条件*人数）`);
+        return;
+      }
       const conditionText = part.slice(0, splitIndex).trim();
       const capacityText = part.slice(splitIndex + 1).trim();
       const capacity = Number(capacityText);
-      if (!Number.isFinite(capacity) || capacity < 0) return;
+      if (!Number.isFinite(capacity) || capacity < 0) {
+        errors.push(`第${lineIndex + 1}行：项"${part}"的人数不是有效非负数字`);
+        return;
+      }
       const parsed = parseQuotaConditionDisplay(conditionText, lastField);
       if (parsed.field) lastField = parsed.field;
-      if (!parsed.label) return;
+      if (!parsed.label) {
+        errors.push(`第${lineIndex + 1}行：项"${part}"无法识别为有效条件`);
+        return;
+      }
+      const id = generateQuotaItemIdFromText(conditionText, parsed.field);
       lineTotal += capacity;
       items.push({
         label: parsed.label,
@@ -3764,6 +3816,7 @@ function parseQuotaRulesText(rawText) {
         lineIndex,
         itemIndex,
         key: `L${lineIndex}-I${itemIndex}`,
+        id,
       });
     });
     if (items.length) {
@@ -3775,12 +3828,16 @@ function parseQuotaRulesText(rawText) {
     }
   });
   const totals = parsedLines.map((line) => Number(line.total) || 0).filter((v) => v > 0);
-  const totalCapacity = totals.length
-    ? (totals.every((v) => v === totals[0]) ? totals[0] : Math.max(...totals))
-    : 0;
+  // Must match backend: all lines must have the same total; otherwise treat as invalid
+  const totalCapacity = totals.length && totals.every((v) => v === totals[0]) ? totals[0] : 0;
+  if (totals.length > 1 && !totals.every((v) => v === totals[0])) {
+    errors.push("每行分配人数总数不一致——所有行的总人数必须相同");
+  }
   return {
     lines: parsedLines,
     totalCapacity,
+    errors,
+    valid: lines.length === 0 ? true : (errors.length === 0),
   };
 }
 
@@ -3804,8 +3861,10 @@ function collectQuotaAssignedCounts(slots) {
       const seen = new Set();
       items.forEach((item) => {
         if (item && typeof item === "object") {
-          const key = `L${Number(item.lineIndex)}-I${Number(item.itemIndex)}`;
-          if (!seen.has(key) && /^L\d+-I\d+$/.test(key)) {
+          // Prefer stable semantic id; fall back to positional key for old records
+          const stableId = item.id || item.quota_id || null;
+          const key = stableId || `L${Number(item.lineIndex)}-I${Number(item.itemIndex)}`;
+          if (!seen.has(key) && /^(Q[0-9a-z]+|L\d+-I\d+)$/.test(key)) {
             byKey.set(key, (byKey.get(key) || 0) + 1);
             seen.add(key);
           }
@@ -3832,7 +3891,8 @@ function buildQuotaUsageTooltipText(rawQuotaText, slots, fallbackRecruited = 0) 
   const lines = [];
   (rules.lines || []).forEach((line) => {
     (line.items || []).forEach((item) => {
-      const byKey = usage.byKey.get(item.key);
+      // Look up by stable id first, then positional key, then label as fallback
+      const byKey = usage.byKey.get(item.id) ?? usage.byKey.get(item.key);
       const byLabel = usage.byLabel.get(item.label);
       const filled = Number.isFinite(byKey) ? byKey : (byLabel || 0);
       lines.push(`${item.label}: ${filled}/${item.capacity}`);
@@ -5021,6 +5081,18 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
         setStatus(adminExperimentStatus, "在线上传不支持代理模式", true);
         return;
       }
+      // Validate quota text before submitting
+      const quotaText = String(editQuota?.value || "").trim();
+      if (quotaText) {
+        const quotaCheck = parseQuotaRulesText(quotaText);
+        if (!quotaCheck.valid) {
+          const msg = quotaCheck.errors?.length
+            ? quotaCheck.errors.slice(0, 3).join("；")
+            : "名额分配格式不正确";
+          setStatus(adminExperimentStatus, msg, true);
+          return;
+        }
+      }
       const allowedDevices = getCheckedValues(panel, "allowed_devices");
       const allowedBrowsers = getCheckedValues(panel, "allowed_browsers");
       const githubRepoValue = String(editGithubRepo?.value || "").trim();
@@ -5038,7 +5110,7 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
           schedule_slots_required: editSlotRequirement?.value || "=1",
           reward: editReward?.value || null,
           conditions_text: editConditions?.value || "",
-          quotas_text: editQuota?.value || "",
+          quotas_text: quotaText || "",
           access_control_mode: editAccessControlMode?.value || "none",
           allowed_devices: allowedDevices,
           allowed_browsers: locationValue === "在线" ? allowedBrowsers : undefined,
@@ -7237,6 +7309,18 @@ adminExperimentForm?.addEventListener("submit", async (event) => {
     if (!location) {
       setStatus(adminExperimentStatus, "请填写实验地点", true);
       return;
+    }
+
+    const quotaText = String(adminQuota?.value || "").trim();
+    if (quotaText) {
+      const quotaCheck = parseQuotaRulesText(quotaText);
+      if (!quotaCheck.valid) {
+        const msg = quotaCheck.errors?.length
+          ? quotaCheck.errors.slice(0, 3).join("；")
+          : "名额分配格式不正确";
+        setStatus(adminExperimentStatus, msg, true);
+        return;
+      }
     }
 
     const useHostedUpload = uploadState.mode === "upload";
