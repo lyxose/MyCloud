@@ -3845,7 +3845,19 @@ function getQuotaTotalFromText(rawText) {
   return Number(parseQuotaRulesText(rawText).totalCapacity || 0);
 }
 
-function collectQuotaAssignedCounts(slots) {
+function collectQuotaAssignedCounts(slots, parsedLines) {
+  // Build positional→stable-id lookup from current parsed rules
+  const posToStableId = Object.create(null);
+  if (Array.isArray(parsedLines)) {
+    for (const line of parsedLines) {
+      for (const item of line.items || []) {
+        if (item.id && item.key) {
+          posToStableId[item.key] = item.id;
+        }
+      }
+    }
+  }
+
   const byKey = new Map();
   const byLabel = new Map();
   let recruited = 0;
@@ -3861,9 +3873,14 @@ function collectQuotaAssignedCounts(slots) {
       const seen = new Set();
       items.forEach((item) => {
         if (item && typeof item === "object") {
-          // Prefer stable semantic id; fall back to positional key for old records
-          const stableId = item.id || item.quota_id || null;
-          const key = stableId || `L${Number(item.lineIndex)}-I${Number(item.itemIndex)}`;
+          // Prefer stable semantic id; for old records, map positional → stable if possible
+          let key;
+          if (item.id || item.quota_id) {
+            key = item.id || item.quota_id;
+          } else {
+            const posKey = `L${Number(item.lineIndex)}-I${Number(item.itemIndex)}`;
+            key = posToStableId[posKey] || posKey;
+          }
           if (!seen.has(key) && /^(Q[0-9a-z]+|L\d+-I\d+)$/.test(key)) {
             byKey.set(key, (byKey.get(key) || 0) + 1);
             seen.add(key);
@@ -3885,7 +3902,7 @@ function buildQuotaUsageTooltipText(rawQuotaText, slots, fallbackRecruited = 0) 
   if (!rules.lines?.length) {
     return "名额分配未设置";
   }
-  const usage = collectQuotaAssignedCounts(slots);
+  const usage = collectQuotaAssignedCounts(slots, rules.lines);
   const totalCapacity = Number(rules.totalCapacity || 0);
   const recruited = usage.recruited || Number(fallbackRecruited) || 0;
   const lines = [];
