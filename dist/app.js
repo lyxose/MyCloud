@@ -4550,12 +4550,33 @@ async function loadAdminExperimentDetail(experimentUid) {
   const panel = document.getElementById("adminPanelExperiments");
   setLoadingBlock(panel, "正在加载实验详情...");
   try {
-    const data = await apiRequest(`/admin/experiment?experiment_uid=${encodeURIComponent(experimentUid)}`, {
+    // 轻量接口：先拿到实验元信息 + slot + 名单（跳过跨实验占用日历与 R2/KV），首屏秒开
+    const data = await apiRequest(`/admin/experiment/participants?experiment_uid=${encodeURIComponent(experimentUid)}`, {
       method: "GET",
     });
-    renderAdminExperimentDetail(data.experiment, data.slots || [], data.cross_slots || [], data.participants || {});
+    renderAdminExperimentDetail(data.experiment, data.slots || [], [], data.participants || {});
+    // 跨实验占用日历（仅线下需要）懒加载，不阻塞切换标签首屏
+    const loc = String(data.experiment?.location || "").trim();
+    if (loc && loc !== "在线") {
+      loadCrossSlotsLazy(experimentUid);
+    }
   } catch (error) {
     setStatus(adminExperimentStatus, error.message, true);
+  }
+}
+
+// 单独拉取跨实验占用日历并刷新日程网格，避免拖慢切换实验标签的首屏
+async function loadCrossSlotsLazy(experimentUid) {
+  try {
+    const sd = await apiRequest(`/admin/experiment/schedule?experiment_uid=${encodeURIComponent(experimentUid)}`, {
+      method: "GET",
+    });
+    adminEditState.crossSlots = sd.cross_slots || [];
+    if (adminEditState.slots && adminEditState.slots.length) {
+      loadScheduleFromSlots(adminEditState.slots);
+    }
+  } catch (e) {
+    // 占用日历加载失败不影响名单查看
   }
 }
 
@@ -5652,7 +5673,7 @@ async function loadParticipantsForExperiment(experimentUid, list, options = {}) 
   try {
     const data = adminParticipantsCache.has(experimentUid)
       ? adminParticipantsCache.get(experimentUid)
-      : await apiRequest(`/admin/experiment?experiment_uid=${encodeURIComponent(experimentUid)}`, {
+      : await apiRequest(`/admin/experiment/participants?experiment_uid=${encodeURIComponent(experimentUid)}`, {
         method: "GET",
       });
     adminParticipantsCache.set(experimentUid, data);
