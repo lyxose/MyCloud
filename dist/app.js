@@ -5119,8 +5119,10 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
         setStatus(adminExperimentStatus, "在线上传不支持代理模式", true);
         return;
       }
-      // Validate quota text before submitting
-      const quotaText = String(editQuota?.value || "").trim();
+      // Validate quota text before submitting.
+      // Read directly from the DOM to avoid relying on a stale/closures-bound variable.
+      const quotaEl = document.getElementById("adminEditQuota");
+      const quotaText = String((quotaEl && quotaEl.value) || "").trim();
       if (quotaText) {
         const quotaCheck = parseQuotaRulesText(quotaText);
         if (!quotaCheck.valid) {
@@ -5130,6 +5132,9 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
           setStatus(adminExperimentStatus, msg, true);
           return;
         }
+      } else {
+        setStatus(adminExperimentStatus, "请先填写名额分配", true);
+        return;
       }
       const allowedDevices = getCheckedValues(panel, "allowed_devices");
       const allowedBrowsers = getCheckedValues(panel, "allowed_browsers");
