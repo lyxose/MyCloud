@@ -4777,6 +4777,7 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
             </div>
             <div class="hint" id="adminEditBlacklistStatus">未上传黑名单文件</div>
           </div>
+          <div id="adminEditSaveStatus" class="hint" style="margin:8px 0 0;min-height:18px;font-weight:600;"></div>
           <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
             <label class="inline-check" style="margin:0;">
               <input type="checkbox" id="adminEditSameDeviceSingleAccount" ${Number(experiment.same_device_single_account ?? 1) !== 0 ? "checked" : ""} />同一实验中，同一设备禁止切换不同账号重复报名
@@ -5109,14 +5110,22 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
   }
 
   saveInfoBtn?.addEventListener("click", async () => {
+    // Use a dedicated, always-visible status node inside the edit dialog.
+    // The global adminExperimentStatus may be hidden in this dialog's DOM, so we avoid it here.
+    const editSaveStatus = document.getElementById("adminEditSaveStatus");
+    const showEditStatus = (text, isError) => {
+      if (!editSaveStatus) return;
+      editSaveStatus.textContent = text;
+      editSaveStatus.style.color = isError ? "#b42318" : "#1a7f37";
+    };
     try {
       const locationValue = editLocation?.value === "其他" ? editLocationCustom?.value : editLocation?.value;
       if (!locationValue) {
-        setStatus(adminExperimentStatus, "请填写实验地点", true);
+        showEditStatus("请填写实验地点", true);
         return;
       }
       if (isHosted && editAccessControlMode?.value === "proxy") {
-        setStatus(adminExperimentStatus, "在线上传不支持代理模式", true);
+        showEditStatus("在线上传不支持代理模式", true);
         return;
       }
       // Validate quota text before submitting.
@@ -5129,11 +5138,11 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
           const msg = quotaCheck.errors?.length
             ? quotaCheck.errors.slice(0, 3).join("；")
             : "名额分配格式不正确";
-          setStatus(adminExperimentStatus, msg, true);
+          showEditStatus(msg, true);
           return;
         }
       } else {
-        setStatus(adminExperimentStatus, "请先填写名额分配", true);
+        showEditStatus("请先填写名额分配", true);
         return;
       }
       const allowedDevices = getCheckedValues(panel, "allowed_devices");
@@ -5164,12 +5173,18 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
           download_policy: editDownloadPolicy?.value || null,
         },
       });
-      setStatus(adminExperimentStatus, "实验信息已保存");
+      showEditStatus("实验信息已保存", false);
       await loadAdminExperiments();
       await loadAdminExperimentList();
       await loadAdminExperimentDetail(experiment.experiment_uid);
     } catch (error) {
-      setStatus(adminExperimentStatus, error.message, true);
+      const editSaveStatus = document.getElementById("adminEditSaveStatus");
+      if (editSaveStatus) {
+        editSaveStatus.textContent = "保存失败：" + (error && error.message ? error.message : error);
+        editSaveStatus.style.color = "#b42318";
+      } else {
+        setStatus(adminExperimentStatus, error.message, true);
+      }
     }
   });
 
