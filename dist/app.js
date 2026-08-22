@@ -4855,6 +4855,24 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
   setBlacklistStatus(editBlacklistStatus, editBlacklistConfig);
   bindQuotaUsageTooltip([editQuotaLabel, editQuota], () => buildQuotaUsageTooltipText(editQuota?.value || "", slots, experiment.recruited_count || 0));
 
+  // 实时校验名额分配：填写时若格式不合法或各行人数不一致，立即红字提示
+  editQuota?.addEventListener("input", () => {
+    const text = String(editQuota.value || "").trim();
+    if (!text) {
+      setStatus(adminExperimentStatus, "", false);
+      return;
+    }
+    const check = parseQuotaRulesText(text);
+    if (!check.valid) {
+      const msg = check.errors?.length
+        ? check.errors.slice(0, 3).join("；")
+        : "名额分配格式不正确";
+      setStatus(adminExperimentStatus, msg, true);
+    } else {
+      setStatus(adminExperimentStatus, "名额分配格式正确", false);
+    }
+  });
+
   editDownloadBlacklistTemplateBtn?.addEventListener("click", () => {
     downloadBlacklistTemplateFile();
   });
@@ -5120,7 +5138,11 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
         return;
       }
       // Validate quota text before submitting
-      const quotaText = String(editQuota?.value || "").trim();
+      if (!editQuota) {
+        setStatus(adminExperimentStatus, "未找到名额分配输入框，无法保存", true);
+        return;
+      }
+      const quotaText = String(editQuota.value || "").trim();
       if (quotaText) {
         const quotaCheck = parseQuotaRulesText(quotaText);
         if (!quotaCheck.valid) {
@@ -5130,6 +5152,9 @@ function renderAdminExperimentDetail(experiment, slots, crossSlots, participants
           setStatus(adminExperimentStatus, msg, true);
           return;
         }
+      } else {
+        setStatus(adminExperimentStatus, "请先填写名额分配后再保存", true);
+        return;
       }
       const allowedDevices = getCheckedValues(panel, "allowed_devices");
       const allowedBrowsers = getCheckedValues(panel, "allowed_browsers");
