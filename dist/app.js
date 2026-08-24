@@ -4293,6 +4293,9 @@ function renderAppliedExperiments() {
     const sortTime = startTimes.length
       ? Math.max(...startTimes)
       : Date.parse(record?.applied_at || "") || 0;
+    const allLabels = slots
+      .map((slot) => (slot.start_time ? formatSlotDateTime(slot.start_time) : null))
+      .filter(Boolean);
     return {
       uid,
       name: exp?.name || record?.experiment_type || uid,
@@ -4305,9 +4308,7 @@ function renderAppliedExperiments() {
       deviceHint: exp?.device_restriction_hint || "",
       accessLink: record?.access_url || record?.location_link || exp?.location_link || "",
       latestTime: sortTime,
-      slotLabel: startTimes.length
-        ? formatSlotDateTime(new Date(Math.max(...startTimes)).toISOString())
-        : "-",
+      slotLabel: allLabels.length ? allLabels.join("、") : "-",
       status: record?.status || "active",
     };
   }).filter(Boolean);
