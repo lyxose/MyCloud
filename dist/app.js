@@ -4285,7 +4285,6 @@ function renderAppliedExperiments() {
 
   const applied = entries.map(([uid, record]) => {
     const exp = state.experiments.find((item) => item.experiment_uid === uid);
-    if (!exp) return null;
     const slots = Array.isArray(record?.slots) ? record.slots : [];
     const startTimes = slots
       .map((slot) => Date.parse(slot.start_time || slot.startTime || ""))
@@ -4298,14 +4297,14 @@ function renderAppliedExperiments() {
       .filter(Boolean);
     return {
       uid,
-      name: exp?.name || record?.experiment_type || uid,
-      type: exp?.type || record?.experiment_type || "-",
-      location: exp?.location || "",
-      reward: exp?.reward || "",
-      durationMin: exp?.duration_min || "",
-      contact: exp?.contact_phone || "",
-      notes: exp?.notes || "",
-      deviceHint: exp?.device_restriction_hint || "",
+      name: record?.name || exp?.name || record?.experiment_type || uid,
+      type: record?.type || exp?.type || record?.experiment_type || "-",
+      location: record?.location || exp?.location || "",
+      reward: record?.reward || exp?.reward || "",
+      durationMin: record?.duration_min || exp?.duration_min || "",
+      contact: record?.contact_phone || exp?.contact_phone || "",
+      notes: record?.notes || exp?.notes || "",
+      deviceHint: record?.device_restriction_hint || exp?.device_restriction_hint || "",
       accessLink: record?.access_url || record?.location_link || exp?.location_link || "",
       latestTime: sortTime,
       slotLabel: allLabels.length ? allLabels.join("、") : "-",
