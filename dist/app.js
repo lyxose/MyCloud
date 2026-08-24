@@ -5319,7 +5319,9 @@ function renderAdminSchedulePreview(slots, participantsMap, container) {
       const block = document.createElement("div");
       block.className = "schedule-slot";
       const slotParticipants = JSON.parse(slot.participants_json || "[]");
-      const names = slotParticipants.map((p) => p.name).join("、");
+      const isSlotRejected = (p) => String(p?.participant_status || p?.status || "").toLowerCase() === "rejected" || p?.rejected === true;
+      const activeSlotParticipants = slotParticipants.filter((p) => !isSlotRejected(p));
+      const names = activeSlotParticipants.map((p) => p.name).join("、");
       block.innerHTML = `
         <div class="slot-time">
           <span>${formatSlotTime(slot.start_time)}</span>
@@ -5329,8 +5331,8 @@ function renderAdminSchedulePreview(slots, participantsMap, container) {
       `;
       block.addEventListener("click", (event) => {
         event.stopPropagation();
-        if (!slotParticipants.length) return;
-        const contact = slotParticipants
+        if (!activeSlotParticipants.length) return;
+        const contact = activeSlotParticipants
           .map((p) => {
             const info = participantsMap[p.user_uid] || {};
             return `${p.name} ${info.alipay_phone || "-"} ${info.wechat || "-"}`;
