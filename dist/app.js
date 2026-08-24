@@ -4308,6 +4308,7 @@ function renderAppliedExperiments() {
       slotLabel: startTimes.length
         ? formatSlotDateTime(new Date(Math.max(...startTimes)).toISOString())
         : "-",
+      status: record?.status || "active",
     };
   }).filter(Boolean);
 
@@ -4323,6 +4324,7 @@ function renderAppliedExperiments() {
     const duration = formatDurationWithUnit(item.durationMin);
     const deviceNotice = item.deviceHint ? `⚠️ ${item.deviceHint}` : "";
     const hasOnlineLink = item.location === "在线";
+    const isPending = item.status === "pending";
     card.innerHTML = `
       <div class="experiment-card-header">
         <strong>${item.name}</strong>
@@ -4335,7 +4337,8 @@ function renderAppliedExperiments() {
         ${deviceNotice ? `<p class="notice">${deviceNotice}</p>` : ""}
         ${noticeHtml ? `<p class="notice">${noticeHtml}</p>` : ""}
         <p class="hint">${contact}</p>
-        ${hasOnlineLink ? `<button type="button" class="ghost" data-action="copy-link">复制实验链接</button>` : ""}
+        ${isPending ? `<p class="notice" style="color:#b42318;font-weight:600;">待主试确认后生效</p>` : ""}
+        ${hasOnlineLink && !isPending ? `<button type="button" class="ghost" data-action="copy-link">复制实验链接</button>` : ""}
       </div>
     `;
     if (hasOnlineLink) {
